@@ -10,6 +10,7 @@ import json
 import os
 import sys
 from datetime import datetime
+from html import escape as _e
 
 
 def format_currency(value: float) -> str:
@@ -65,14 +66,14 @@ def generate_html(investments: list, output_path: str = "relatorio.html") -> str
         type_code = inv.get("type", "OTHER") or "OTHER"
         rows_html += f"""
         <tr>
-          <td>{inv.get("name") or "-"}</td>
-          <td>{inv.get("institution") or "-"}</td>
-          <td><span class="badge badge-{type_code.lower()}">{get_type_label(type_code)}</span></td>
+          <td>{_e(inv.get("name") or "-")}</td>
+          <td>{_e(inv.get("institution") or "-")}</td>
+          <td><span class="badge badge-{_e(type_code.lower())}">{_e(get_type_label(type_code))}</span></td>
           <td class="number">{format_currency(inv.get("amount", 0) or 0)}</td>
           <td class="number">{format_currency(inv.get("value", 0) or 0)}</td>
           <td class="number {ret_class}">{format_currency(ret_amt)}</td>
           <td class="number {ret_class}">{format_percentage(ret_rate)}</td>
-          <td>{maturity}</td>
+          <td>{_e(str(maturity))}</td>
         </tr>"""
 
     ret_card_class = "positive" if total_return >= 0 else "negative"
@@ -278,8 +279,8 @@ def generate_html(investments: list, output_path: str = "relatorio.html") -> str
       rows.sort((a, b) => {{
         const av = a.cells[col].textContent.trim();
         const bv = b.cells[col].textContent.trim();
-        const an = parseFloat(av.replace(/[^\\d,.-]/g, '').replace(',', '.'));
-        const bn = parseFloat(bv.replace(/[^\\d,.-]/g, '').replace(',', '.'));
+        const an = parseFloat(av.replace(/[^\\d,\\-]/g, '').replace('.', '').replace(',', '.'));
+        const bn = parseFloat(bv.replace(/[^\\d,\\-]/g, '').replace('.', '').replace(',', '.'));
         if (!isNaN(an) && !isNaN(bn)) return _sortDir[col] ? an - bn : bn - an;
         return _sortDir[col] ? av.localeCompare(bv, 'pt-BR') : bv.localeCompare(av, 'pt-BR');
       }});
@@ -303,9 +304,18 @@ if __name__ == "__main__":
     json_path = sys.argv[1]
     output_path = sys.argv[2] if len(sys.argv) > 2 else "relatorio.html"
 
-    with open(json_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print(f"Erro: arquivo não encontrado: {json_path}", file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"Erro: JSON inválido em {json_path}: {e}", file=sys.stderr)
+        sys.exit(1)
 
     investments = data if isinstance(data, list) else data.get("investments", [])
+    if not investments:
+        print("Aviso: nenhum investimento encontrado no arquivo JSON.", file=sys.stderr)
     result = generate_html(investments, output_path)
     print(f"Relatório gerado: {result}")
