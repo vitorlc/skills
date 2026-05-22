@@ -10,6 +10,7 @@ import json
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 from html import escape as _e
 
 
@@ -49,6 +50,23 @@ def get_type_label(type_code: str) -> str:
         "REAL_ESTATE": "FIIs",
         "OTHER": "Outros",
     }.get(type_code, type_code)
+
+
+def load_snapshots_series() -> tuple[list[str], list[float]]:
+    """Returns (labels, values) from all saved snapshots, sorted by timestamp."""
+    snap_dir = Path(__file__).resolve().parent.parent / "tmp" / "snapshots"
+    if not snap_dir.exists():
+        return [], []
+    labels, values = [], []
+    for f in sorted(snap_dir.glob("*.json")):
+        try:
+            d = json.loads(f.read_text())
+            dt = datetime.fromisoformat(d["timestamp"])
+            labels.append(dt.strftime("%d/%m %H:%M"))
+            values.append(round(d["totals"]["current"], 2))
+        except (KeyError, ValueError):
+            continue
+    return labels, values
 
 
 def load_diff(path: str | None) -> dict | None:
@@ -99,15 +117,12 @@ def generate_html(investments: list, output_path: str, diff: dict | None) -> str
         label = get_type_label(inv.get("type", "OTHER"))
         type_totals[label] = type_totals.get(label, 0) + (inv.get("value", 0) or 0)
 
-    inst_totals: dict = {}
-    for inv in investments:
-        inst = inv.get("institution") or "Desconhecido"
-        inst_totals[inst] = inst_totals.get(inst, 0) + (inv.get("value", 0) or 0)
-
     type_labels_js = json.dumps(list(type_totals.keys()))
     type_values_js = json.dumps([round(v, 2) for v in type_totals.values()])
-    inst_labels_js = json.dumps(list(inst_totals.keys()))
-    inst_values_js = json.dumps([round(v, 2) for v in inst_totals.values()])
+
+    snap_labels, snap_values = load_snapshots_series()
+    snap_labels_js = json.dumps(snap_labels)
+    snap_values_js = json.dumps(snap_values)
 
     delta_str, delta_class = format_delta(total_delta)
     avanco_label = f"Avanço desde {prev_ts_str}" if prev_ts_str else "Avanço"
@@ -262,8 +277,8 @@ def generate_html(investments: list, output_path: str, diff: dict | None) -> str
         <canvas id="pieChart"></canvas>
       </div>
       <div class="chart-box">
-        <h2>Valor por Instituição</h2>
-        <canvas id="barChart"></canvas>
+        <h2>Evolução do Valor Total</h2>
+        <canvas id="lineChart"></canvas>
       </div>
     </div>
 
@@ -303,14 +318,20 @@ def generate_html(investments: list, output_path: str, diff: dict | None) -> str
       }}
     }});
 
-    new Chart(document.getElementById('barChart'), {{
-      type: 'bar',
+    new Chart(document.getElementById('lineChart'), {{
+      type: 'line',
       data: {{
-        labels: {inst_labels_js},
+        labels: {snap_labels_js},
         datasets: [{{
-          label: 'Valor Atual',
-          data: {inst_values_js},
-          backgroundColor: COLORS, borderRadius: 6, borderWidth: 0
+          label: 'Valor Total',
+          data: {snap_values_js},
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,0.08)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: '#3b82f6',
+          fill: true,
+          tension: 0.3
         }}]
       }},
       options: {{
