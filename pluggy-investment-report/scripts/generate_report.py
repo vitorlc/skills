@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Pluggy Investment Report Generator
-Usage: python generate_report.py <investments.json> [output.html]
+Usage: python generate_report.py <investments.json> [output.html] [--diff diff.json]
 
 investments.json must be a JSON array of objects with fields:
-  name, institution, type, amount, value, return_amount, return_rate, maturity_date
+  id, name, institution, type, value, maturity_date
 """
 import json
 import os
@@ -19,14 +19,29 @@ def format_currency(value: float) -> str:
     return f"{sign}{formatted}"
 
 
-def format_percentage(value: float) -> str:
-    return f"{value:.2f}%".replace(".", ",")
+def format_delta(value: float) -> tuple[str, str]:
+    """Returns (formatted string, css class)."""
+    if value > 0:
+        return f"↑ {format_currency(value)}", "positive"
+    if value < 0:
+        return f"↓ {format_currency(abs(value))}", "negative"
+    return "—", "neutral"
+
+
+def format_date(value: str | None) -> str:
+    if not value:
+        return "-"
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return dt.strftime("%d/%m/%Y")
+    except (ValueError, AttributeError):
+        return str(value)
 
 
 def get_type_label(type_code: str) -> str:
     return {
         "FIXED_INCOME": "Renda Fixa",
-        "STOCK": "Ações",
+        "EQUITY": "Ações",
         "FUND": "Fundos",
         "MUTUAL_FUND": "Fundos",
         "ETF": "ETF",
@@ -36,11 +51,48 @@ def get_type_label(type_code: str) -> str:
     }.get(type_code, type_code)
 
 
-def generate_html(investments: list, output_path: str = "relatorio.html") -> str:
-    total_invested = sum(i.get("amount", 0) or 0 for i in investments)
+def load_diff(path: str | None) -> dict | None:
+    if not path:
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def build_asset_deltas(diff: dict | None) -> dict:
+    """Returns {investment_id: value_delta}. New assets get value_curr as delta."""
+    if not diff or diff.get("first_run"):
+        return {}
+    deltas = {}
+    for item in diff.get("assets", {}).get("changed", []):
+        if item.get("id"):
+            deltas[item["id"]] = item.get("value_delta", 0)
+    for item in diff.get("assets", {}).get("new", []):
+        if item.get("id"):
+            deltas[item["id"]] = item.get("value_curr", 0)
+    return deltas
+
+
+def generate_html(investments: list, output_path: str, diff: dict | None) -> str:
+    investments = [i for i in investments if (i.get("value") or 0) > 0]
+
     total_current = sum(i.get("value", 0) or 0 for i in investments)
-    total_return = total_current - total_invested
-    total_return_rate = (total_return / total_invested * 100) if total_invested else 0
+
+    first_run = diff.get("first_run", True) if diff else True
+    prev_ts_str = ""
+    total_delta = 0.0
+    if diff and not first_run:
+        prev_ts = diff.get("previous_timestamp", "")
+        try:
+            dt = datetime.fromisoformat(prev_ts)
+            prev_ts_str = dt.strftime("%d/%m/%Y às %H:%M")
+        except (ValueError, TypeError):
+            prev_ts_str = prev_ts
+        total_delta = diff.get("totals", {}).get("current", {}).get("delta", 0)
+
+    asset_deltas = build_asset_deltas(diff)
 
     type_totals: dict = {}
     for inv in investments:
@@ -57,26 +109,31 @@ def generate_html(investments: list, output_path: str = "relatorio.html") -> str
     inst_labels_js = json.dumps(list(inst_totals.keys()))
     inst_values_js = json.dumps([round(v, 2) for v in inst_totals.values()])
 
+    delta_str, delta_class = format_delta(total_delta)
+    avanco_label = f"Avanço desde {prev_ts_str}" if prev_ts_str else "Avanço"
+    avanco_note = f"desde {prev_ts_str}" if prev_ts_str else "primeira execução"
+
     rows_html = ""
     for inv in sorted(investments, key=lambda x: x.get("value", 0) or 0, reverse=True):
-        ret_amt = inv.get("return_amount", 0) or 0
-        ret_rate = inv.get("return_rate", 0) or 0
-        ret_class = "positive" if ret_amt >= 0 else "negative"
-        maturity = inv.get("maturity_date") or "-"
+        inv_id = inv.get("id", "")
+        asset_delta = asset_deltas.get(inv_id)
+        if asset_delta is not None:
+            ad_str, ad_class = format_delta(asset_delta)
+        else:
+            ad_str, ad_class = "—", "neutral"
+
+        maturity = format_date(inv.get("maturity_date"))
         type_code = inv.get("type", "OTHER") or "OTHER"
         rows_html += f"""
         <tr>
           <td>{_e(inv.get("name") or "-")}</td>
           <td>{_e(inv.get("institution") or "-")}</td>
           <td><span class="badge badge-{_e(type_code.lower())}">{_e(get_type_label(type_code))}</span></td>
-          <td class="number">{format_currency(inv.get("amount", 0) or 0)}</td>
           <td class="number">{format_currency(inv.get("value", 0) or 0)}</td>
-          <td class="number {ret_class}">{format_currency(ret_amt)}</td>
-          <td class="number {ret_class}">{format_percentage(ret_rate)}</td>
-          <td>{_e(str(maturity))}</td>
+          <td class="number {ad_class}">{_e(ad_str)}</td>
+          <td>{_e(maturity)}</td>
         </tr>"""
 
-    ret_card_class = "positive" if total_return >= 0 else "negative"
     n = len(investments)
     asset_word = "ativo" if n == 1 else "ativos"
     generation_date = datetime.now().strftime("%d/%m/%Y às %H:%M")
@@ -104,7 +161,7 @@ def generate_html(investments: list, output_path: str = "relatorio.html") -> str
     header h1 {{ font-size: 1.6rem; font-weight: 700; }}
     header .date {{ font-size: 0.85rem; color: #666; }}
     .cards {{
-      display: grid; grid-template-columns: repeat(3, 1fr);
+      display: grid; grid-template-columns: repeat(2, 1fr);
       gap: 16px; margin-bottom: 28px;
     }}
     .card {{
@@ -115,6 +172,7 @@ def generate_html(investments: list, output_path: str = "relatorio.html") -> str
       font-size: 0.78rem; color: #888; text-transform: uppercase;
       letter-spacing: .05em; margin-bottom: 8px;
     }}
+    .card .note {{ font-size: 0.75rem; color: #aaa; margin-top: 4px; }}
     .card .value {{ font-size: 1.5rem; font-weight: 700; }}
     .charts {{
       display: grid; grid-template-columns: 1fr 1fr;
@@ -143,11 +201,13 @@ def generate_html(investments: list, output_path: str = "relatorio.html") -> str
     .number {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
     .positive {{ color: #16a34a; font-weight: 600; }}
     .negative {{ color: #dc2626; font-weight: 600; }}
+    .neutral  {{ color: #9ca3af; }}
     .badge {{
       display: inline-block; padding: 2px 8px; border-radius: 999px;
       font-size: 0.74rem; font-weight: 500;
     }}
     .badge-fixed_income {{ background: #dbeafe; color: #1d4ed8; }}
+    .badge-equity,
     .badge-stock      {{ background: #fef3c7; color: #92400e; }}
     .badge-fund,
     .badge-mutual_fund {{ background: #ede9fe; color: #6d28d9; }}
@@ -185,19 +245,14 @@ def generate_html(investments: list, output_path: str = "relatorio.html") -> str
 
     <div class="cards">
       <div class="card">
-        <div class="label">Total Investido</div>
-        <div class="value">{format_currency(total_invested)}</div>
-      </div>
-      <div class="card">
         <div class="label">Valor Atual</div>
         <div class="value">{format_currency(total_current)}</div>
+        <div class="note">{n} {asset_word}</div>
       </div>
       <div class="card">
-        <div class="label">Rendimento Total</div>
-        <div class="value {ret_card_class}">
-          {format_currency(total_return)}<br>
-          <small>{format_percentage(total_return_rate)}</small>
-        </div>
+        <div class="label">{_e(avanco_label)}</div>
+        <div class="value {delta_class}">{_e(delta_str)}</div>
+        <div class="note">{_e(avanco_note)}</div>
       </div>
     </div>
 
@@ -220,11 +275,9 @@ def generate_html(investments: list, output_path: str = "relatorio.html") -> str
             <th onclick="sortTable(0)">Nome ↕</th>
             <th onclick="sortTable(1)">Instituição ↕</th>
             <th onclick="sortTable(2)">Tipo ↕</th>
-            <th onclick="sortTable(3)" style="text-align:right">Investido ↕</th>
-            <th onclick="sortTable(4)" style="text-align:right">Valor Atual ↕</th>
-            <th onclick="sortTable(5)" style="text-align:right">Rendimento ↕</th>
-            <th onclick="sortTable(6)" style="text-align:right">Retorno % ↕</th>
-            <th onclick="sortTable(7)">Vencimento ↕</th>
+            <th onclick="sortTable(3)" style="text-align:right">Valor Atual ↕</th>
+            <th onclick="sortTable(4)" style="text-align:right">Avanço ↕</th>
+            <th onclick="sortTable(5)">Vencimento ↕</th>
           </tr>
         </thead>
         <tbody>{rows_html}
@@ -300,11 +353,25 @@ def generate_html(investments: list, output_path: str = "relatorio.html") -> str
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: generate_report.py <investments.json> [output.html]", file=sys.stderr)
+        print("Usage: generate_report.py <investments.json> [output.html] [--diff diff.json]", file=sys.stderr)
         sys.exit(1)
 
     json_path = sys.argv[1]
-    output_path = sys.argv[2] if len(sys.argv) > 2 else "relatorio.html"
+    output_path = "relatorio.html"
+    diff_path = None
+
+    args = sys.argv[2:]
+    positional = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--diff" and i + 1 < len(args):
+            diff_path = args[i + 1]
+            i += 2
+        else:
+            positional.append(args[i])
+            i += 1
+    if positional:
+        output_path = positional[0]
 
     try:
         with open(json_path, "r", encoding="utf-8") as f:
@@ -317,7 +384,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
     investments = data if isinstance(data, list) else data.get("investments", [])
-    if not investments:
-        print("Aviso: nenhum investimento encontrado no arquivo JSON.", file=sys.stderr)
-    result = generate_html(investments, output_path)
+    diff = load_diff(diff_path)
+    result = generate_html(investments, output_path, diff)
     print(f"Relatório gerado: {result}")

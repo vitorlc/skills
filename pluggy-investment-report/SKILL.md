@@ -81,7 +81,7 @@ Convert each investment object to:
 ```json
 {
   "name": "<results[].name>",
-  "institution": "<connector.name from item>",
+  "institution": "<bank name from accounts COMPE code OR connector.name>",
   "type": "<results[].type>",
   "amount": "<results[].amount>",
   "value": "<results[].balance>",
