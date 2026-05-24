@@ -184,11 +184,14 @@ If `$SKILL_DIR/tmp/allocation_targets.json` exists, read it and append an alloca
 
 ### Step 7 — Generate HTML report
 
+The report is saved as `relatorio.html` in the current working directory. Tell the user the full path so they can find it:
+
 ```bash
 python3 "$SKILL_DIR/scripts/generate_report.py" \
   /tmp/pluggy_investments.json \
   relatorio.html \
-  $DIFF_FLAG
+  $DIFF_FLAG \
+&& echo "Relatório salvo em: $(pwd)/relatorio.html"
 ```
 
 ### Step 8 — Open in browser
