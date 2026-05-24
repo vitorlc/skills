@@ -155,6 +155,8 @@ Output exactly this format (fill in real values):
 ...
 ```
 
+Use these type labels when grouping: `FIXED_INCOME` → Renda Fixa, `EQUITY`/`STOCK` → Ações, `FUND`/`MUTUAL_FUND` → Fundos, `ETF` → ETF, `TREASURY` → Tesouro Direto, `REAL_ESTATE` → FIIs, anything else → Outros.
+
 If `$SKILL_DIR/tmp/allocation_targets.json` exists, read it and append an allocation analysis section. Compute deviation as `actual% - target%`. Only show a recommendation when `|deviation| >= 2%`. Imbalance = category with the largest absolute deviation.
 
 ```
