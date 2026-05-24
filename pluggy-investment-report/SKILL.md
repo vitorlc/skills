@@ -53,10 +53,12 @@ Set `SKILL_DIR` so subsequent steps reference the correct script and data paths:
 
 ```bash
 SKILL_DIR="$HOME/.claude/skills/pluggy-investment-report"
-echo "Skill dir: $SKILL_DIR"
+[ -d "$SKILL_DIR/scripts" ] \
+  && echo "✓ Skill dir OK: $SKILL_DIR" \
+  || echo "✗ Scripts not found at $SKILL_DIR — adjust SKILL_DIR before continuing"
 ```
 
-If the skill was installed elsewhere, adjust the path. The `scripts/` and `tmp/` subdirectories must exist under this path.
+If the scripts are not found, stop and ask the user where the skill is installed before proceeding.
 
 ### Step 1 — Authenticate
 
