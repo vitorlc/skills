@@ -121,7 +121,19 @@ Write the normalized list to `/tmp/pluggy_investments.json` and restrict permiss
 chmod 600 /tmp/pluggy_investments.json
 ```
 
-### Step 5 — Display Markdown summary in terminal
+### Step 5 — Compute historical diff
+
+Compare the current portfolio against the previous snapshot to populate the evolution chart and per-asset delta columns in the HTML report. On first run this creates the baseline; on subsequent runs it computes what changed since last time.
+
+```bash
+python3 "$SKILL_DIR/scripts/snapshot_diff.py" \
+  /tmp/pluggy_investments.json \
+  /tmp/pluggy_diff.json
+```
+
+If this step fails, set `DIFF_FLAG=""` and continue — the HTML report will show "—" in delta columns and an empty evolution chart. Otherwise set `DIFF_FLAG="--diff /tmp/pluggy_diff.json"`.
+
+### Step 6 — Display Markdown summary in terminal  <!-- was Step 5 -->
 
 Output exactly this format (fill in real values):
 
@@ -160,15 +172,16 @@ If `$SKILL_DIR/tmp/allocation_targets.json` exists, read it and append an alloca
 ⚠ Carteira desbalanceada em 7% — maior desvio: ETF (-7%)
 ```
 
-### Step 6 — Generate HTML report
+### Step 7 — Generate HTML report
 
 ```bash
 python3 "$SKILL_DIR/scripts/generate_report.py" \
   /tmp/pluggy_investments.json \
-  relatorio.html
+  relatorio.html \
+  $DIFF_FLAG
 ```
 
-### Step 7 — Open in browser
+### Step 8 — Open in browser  <!-- was Step 7 -->
 
 ```bash
 open relatorio.html        # macOS
@@ -185,6 +198,7 @@ start relatorio.html       # Windows
 | No investments in any item | Show summary with zeros, still generate HTML with empty-state message |
 | `python` not found | "Python 3 not found. Install Python 3.8+ or retry with `python3`." — retry with `python3` |
 | `generate_report.py` fails | Show the Python error to the user, check JSON format of `/tmp/pluggy_investments.json` |
+| `snapshot_diff.py` fails | Log the error, set `DIFF_FLAG=""` and continue — delta columns will show "—" |
 
 ## PDF Export
 
