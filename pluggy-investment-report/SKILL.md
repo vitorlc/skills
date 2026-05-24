@@ -104,6 +104,7 @@ Consolidate all `results` arrays from all items into one list. Carry the institu
 Convert each investment object to:
 ```json
 {
+  "id": "<results[].id>",
   "name": "<results[].name>",
   "institution": "<bank name from accounts COMPE code OR connector.name>",
   "type": "<results[].type>",
