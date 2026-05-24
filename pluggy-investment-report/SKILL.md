@@ -1,6 +1,6 @@
 ---
 name: pluggy-investment-report
-description: Use this skill when the user wants to generate an investment report using the Pluggy API. Fetches consolidated investment data from all connected accounts and produces a Markdown summary in the terminal plus a rich HTML dashboard with charts and PDF export.
+description: Use this skill whenever the user wants to view, analyze, or report on their investments or portfolio. Triggers on phrases like "gerar relatório de investimentos", "ver minha carteira", "quanto tenho investido", "meus rendimentos", "como estão meus ativos", "relatório financeiro", "dashboard de investimentos", "evolução da carteira", or any request to check, summarize, or visualize investment data from connected bank or broker accounts — even if the user doesn't explicitly mention "Pluggy" or "report".
 ---
 
 # Pluggy Investment Report
@@ -32,6 +32,16 @@ Check presence only (without revealing values):
 [ -n "$PLUGGY_CLIENT_ID" ]     && echo "✓ PLUGGY_CLIENT_ID set"     || echo "✗ PLUGGY_CLIENT_ID missing"
 [ -n "$PLUGGY_CLIENT_SECRET" ] && echo "✓ PLUGGY_CLIENT_SECRET set" || echo "✗ PLUGGY_CLIENT_SECRET missing"
 ```
+
+### Sandbox / test data
+
+If the user asks for a demo or test run (or passes `--sandbox`), follow the sandbox setup in `references/pluggy-api.md` section 5. Real credentials are still required; the difference is that you connect a sandbox account (connector 201) instead of real bank accounts.
+
+### Allocation targets (optional)
+
+If `pluggy-investment-report/tmp/allocation_targets.json` exists, the report will include an allocation analysis section comparing targets to actual percentages.
+
+To set up targets for the first time: generate the report, open it in a browser, click **Configurar metas**, fill in the desired percentages (must sum to 100%), and click **⬇ Salvar metas**. Move the downloaded file to `pluggy-investment-report/tmp/allocation_targets.json`.
 
 ## Execution Steps
 
@@ -117,6 +127,23 @@ Output exactly this format (fill in real values):
 | Renda Fixa | R$ X.XXX,XX | XX,X% |
 | Ações | R$ X.XXX,XX | XX,X% |
 ...
+```
+
+If `pluggy-investment-report/tmp/allocation_targets.json` exists, read it and append an allocation analysis section. Compute deviation as `actual% - target%`. Only show a recommendation when `|deviation| >= 2%`. Imbalance = category with the largest absolute deviation.
+
+```
+### Análise de Alocação
+| Categoria | Meta | Atual | Desvio |
+|---|---|---|---|
+| Renda Fixa | 70% | 76% | +6% |
+| ETF | 15% | 8% | -7% |
+| Fundos | 5% | 4% | -1% |
+
+**Recomendações:**
+- ↑ Comprar ETF (7% abaixo da meta)
+- ↓ Reduzir Renda Fixa (6% acima da meta)
+
+⚠ Carteira desbalanceada em 7% — maior desvio: ETF (-7%)
 ```
 
 ### Step 6 — Generate HTML report
