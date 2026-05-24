@@ -129,13 +129,17 @@ chmod 600 /tmp/pluggy_investments.json
 Compare the current portfolio against the previous snapshot to populate the evolution chart and per-asset delta columns in the HTML report. On first run this creates the baseline; on subsequent runs it computes what changed since last time.
 
 ```bash
-python3 "$SKILL_DIR/scripts/snapshot_diff.py" \
-  /tmp/pluggy_investments.json \
-  /tmp/pluggy_diff.json \
-&& chmod 600 /tmp/pluggy_diff.json
+if python3 "$SKILL_DIR/scripts/snapshot_diff.py" \
+     /tmp/pluggy_investments.json \
+     /tmp/pluggy_diff.json; then
+  chmod 600 /tmp/pluggy_diff.json
+  DIFF_FLAG="--diff /tmp/pluggy_diff.json"
+  echo "✓ Diff computed"
+else
+  DIFF_FLAG=""
+  echo "⚠ snapshot_diff failed — report will have no evolution data"
+fi
 ```
-
-If this step fails, set `DIFF_FLAG=""` and continue — the HTML report will show "—" in delta columns and an empty evolution chart. Otherwise set `DIFF_FLAG="--diff /tmp/pluggy_diff.json"`.
 
 ### Step 6 — Display Markdown summary in terminal
 
