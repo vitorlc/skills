@@ -131,7 +131,8 @@ Compare the current portfolio against the previous snapshot to populate the evol
 ```bash
 python3 "$SKILL_DIR/scripts/snapshot_diff.py" \
   /tmp/pluggy_investments.json \
-  /tmp/pluggy_diff.json
+  /tmp/pluggy_diff.json \
+&& chmod 600 /tmp/pluggy_diff.json
 ```
 
 If this step fails, set `DIFF_FLAG=""` and continue — the HTML report will show "—" in delta columns and an empty evolution chart. Otherwise set `DIFF_FLAG="--diff /tmp/pluggy_diff.json"`.
