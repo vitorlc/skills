@@ -133,7 +133,7 @@ python3 "$SKILL_DIR/scripts/snapshot_diff.py" \
 
 If this step fails, set `DIFF_FLAG=""` and continue — the HTML report will show "—" in delta columns and an empty evolution chart. Otherwise set `DIFF_FLAG="--diff /tmp/pluggy_diff.json"`.
 
-### Step 6 — Display Markdown summary in terminal  <!-- was Step 5 -->
+### Step 6 — Display Markdown summary in terminal
 
 Output exactly this format (fill in real values):
 
@@ -183,7 +183,7 @@ python3 "$SKILL_DIR/scripts/generate_report.py" \
   $DIFF_FLAG
 ```
 
-### Step 8 — Open in browser  <!-- was Step 7 -->
+### Step 8 — Open in browser
 
 ```bash
 open relatorio.html        # macOS
