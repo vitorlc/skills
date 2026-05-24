@@ -84,6 +84,8 @@ curl -s https://api.pluggy.ai/items \
 
 Extract all `results[].id` values (item IDs) and map `id → connector.name` for institution lookup.
 
+**Pagination:** compare `total` vs `results.length`. If `total > results.length`, fetch additional pages (`?page=2`, `?page=3`, …) until all items are collected.
+
 ### Step 3 — Fetch investments per item
 
 For each `itemId`:
@@ -93,8 +95,9 @@ curl -s "https://api.pluggy.ai/investments?itemId=ITEM_ID_HERE" \
   -H "X-API-KEY: ${PLUGGY_API_KEY}"
 ```
 
-Consolidate all `results` arrays from all items into one list.
-Carry the institution name from the item map.
+Consolidate all `results` arrays from all items into one list. Carry the institution name from the item map.
+
+**Pagination:** same as Step 2 — check `total` vs `results.length` per item and fetch all pages before moving on.
 
 ### Step 4 — Normalize to report model
 
