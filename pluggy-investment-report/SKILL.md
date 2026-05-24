@@ -39,13 +39,24 @@ If the user asks for a demo or test run (or passes `--sandbox`), follow the sand
 
 ### Allocation targets (optional)
 
-If `pluggy-investment-report/tmp/allocation_targets.json` exists, the report will include an allocation analysis section comparing targets to actual percentages.
+If `$SKILL_DIR/tmp/allocation_targets.json` exists (where `$SKILL_DIR` is set in Step 0), the report will include an allocation analysis section comparing targets to actual percentages.
 
-To set up targets for the first time: generate the report, open it in a browser, click **Configurar metas**, fill in the desired percentages (must sum to 100%), and click **⬇ Salvar metas**. Move the downloaded file to `pluggy-investment-report/tmp/allocation_targets.json`.
+To set up targets for the first time: generate the report, open it in a browser, click **Configurar metas**, fill in the desired percentages (must sum to 100%), and click **⬇ Salvar metas**. Move the downloaded file to `$SKILL_DIR/tmp/allocation_targets.json`.
 
 ## Execution Steps
 
 Read `references/pluggy-api.md` before proceeding for full endpoint documentation.
+
+### Step 0 — Locate the skill directory
+
+Set `SKILL_DIR` so subsequent steps reference the correct script and data paths:
+
+```bash
+SKILL_DIR="$HOME/.claude/skills/pluggy-investment-report"
+echo "Skill dir: $SKILL_DIR"
+```
+
+If the skill was installed elsewhere, adjust the path. The `scripts/` and `tmp/` subdirectories must exist under this path.
 
 ### Step 1 — Authenticate
 
@@ -129,7 +140,7 @@ Output exactly this format (fill in real values):
 ...
 ```
 
-If `pluggy-investment-report/tmp/allocation_targets.json` exists, read it and append an allocation analysis section. Compute deviation as `actual% - target%`. Only show a recommendation when `|deviation| >= 2%`. Imbalance = category with the largest absolute deviation.
+If `$SKILL_DIR/tmp/allocation_targets.json` exists, read it and append an allocation analysis section. Compute deviation as `actual% - target%`. Only show a recommendation when `|deviation| >= 2%`. Imbalance = category with the largest absolute deviation.
 
 ```
 ### Análise de Alocação
@@ -149,7 +160,7 @@ If `pluggy-investment-report/tmp/allocation_targets.json` exists, read it and ap
 ### Step 6 — Generate HTML report
 
 ```bash
-python ~/.claude/skills/pluggy-investment-report/scripts/generate_report.py \
+python3 "$SKILL_DIR/scripts/generate_report.py" \
   /tmp/pluggy_investments.json \
   relatorio.html
 ```
