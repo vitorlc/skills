@@ -76,6 +76,25 @@ def load_snapshots_series() -> tuple[list[str], list[float]]:
     return labels, values
 
 
+def load_all_snapshots() -> list[dict]:
+    """Returns all snapshots newest-first (skipping the current run) for the history panel."""
+    snap_dir = Path(__file__).resolve().parent.parent / "tmp" / "snapshots"
+    if not snap_dir.exists():
+        return []
+    result = []
+    for f in sorted(snap_dir.glob("*.json"), reverse=True):
+        try:
+            d = json.loads(f.read_text())
+            result.append({
+                "timestamp": d["timestamp"],
+                "totals": d["totals"],
+                "investments": d.get("investments", []),
+            })
+        except (KeyError, ValueError, json.JSONDecodeError):
+            continue
+    return result[1:]  # [0] is the snapshot just saved for the current run
+
+
 def load_diff(path: str | None) -> dict | None:
     if not path:
         return None
@@ -282,6 +301,10 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     snap_labels, snap_values = load_snapshots_series()
     snap_labels_js = json.dumps(snap_labels)
     snap_values_js = json.dumps(snap_values)
+
+    history_snapshots = load_all_snapshots()
+    history_js = json.dumps(history_snapshots)
+    history_count = len(history_snapshots)
 
     delta_str, delta_class = format_delta(total_delta)
     avanco_label = f"Avanço desde {prev_ts_str}" if prev_ts_str else "Avanço"
@@ -498,6 +521,48 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
       .cards {{ grid-template-columns: 1fr; }}
       .charts {{ grid-template-columns: 1fr; }}
     }}
+    .history-section {{ text-align: center; margin-top: 6px; }}
+    .history-toggle {{
+      background: none; border: none; color: #c0c4cc;
+      font-size: 0.75rem; cursor: pointer; padding: 10px 20px;
+      letter-spacing: .02em;
+    }}
+    .history-toggle:hover {{ color: #6b7280; }}
+    .history-panel {{
+      background: #fff; border-radius: 10px; margin-top: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06); text-align: left; overflow: hidden;
+    }}
+    .history-panel-header {{
+      padding: 10px 20px; font-size: 0.72rem; color: #9ca3af;
+      text-transform: uppercase; letter-spacing: .06em; font-weight: 600;
+      border-bottom: 1px solid #f0f0f0;
+    }}
+    .history-row {{
+      display: grid; grid-template-columns: 1fr auto auto auto;
+      align-items: center; padding: 9px 20px; gap: 16px;
+      border-bottom: 1px solid #f9f9f9; cursor: pointer; font-size: 0.84rem;
+    }}
+    .history-row:hover {{ background: #fafafa; }}
+    .history-row:last-of-type {{ border-bottom: none; }}
+    .h-ts  {{ color: #4b5563; }}
+    .h-val {{ color: #1a1a2e; font-weight: 600; font-variant-numeric: tabular-nums; }}
+    .h-cnt {{ color: #9ca3af; font-size: 0.78rem; }}
+    .h-btn {{
+      background: none; border: 1px solid #e5e7eb; border-radius: 4px;
+      color: #aab; font-size: 0.73rem; padding: 2px 8px; cursor: pointer;
+    }}
+    .history-row:hover .h-btn {{ border-color: #d1d5db; color: #6b7280; }}
+    .history-detail {{
+      background: #f9fafb; border-bottom: 1px solid #f0f0f0;
+      padding: 10px 20px 14px; display: none; overflow-x: auto;
+    }}
+    .history-detail table {{ font-size: 0.81rem; width: 100%; border-collapse: collapse; }}
+    .history-detail thead th {{
+      font-size: 0.71rem; padding: 5px 10px; border-bottom: 1px solid #e5e7eb;
+      color: #9ca3af; text-transform: uppercase; letter-spacing: .04em;
+    }}
+    .history-detail tbody td {{ padding: 6px 10px; border-bottom: 1px solid #f3f4f6; }}
+    @media print {{ .history-section {{ display: none; }} }}
   </style>
 </head>
 <body>
@@ -556,6 +621,16 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     {analysis_html}
 
     <button class="print-btn" onclick="window.print()">Imprimir / Salvar como PDF</button>
+
+    {"" if history_count == 0 else f'''<div class="history-section">
+      <button class="history-toggle" id="historyToggle" onclick="toggleHistory()">
+        relatórios anteriores ({history_count}) ▾
+      </button>
+      <div id="history-panel" class="history-panel" style="display:none">
+        <div class="history-panel-header">Histórico de snapshots</div>
+        <div id="history-list"></div>
+      </div>
+    </div>'''}
   </div>
 
   <script>
@@ -602,6 +677,64 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
       }}
     }});
 
+    // ── Histórico de relatórios ──────────────────────────────────────────────
+    const HISTORY = {history_js};
+    const HISTORY_COUNT = {history_count};
+
+    function toggleHistory() {{
+      const panel = document.getElementById('history-panel');
+      const btn   = document.getElementById('historyToggle');
+      if (!panel) return;
+      const opening = panel.style.display === 'none';
+      panel.style.display = opening ? 'block' : 'none';
+      btn.textContent = 'relatórios anteriores (' + HISTORY_COUNT + (opening ? ') ▴' : ') ▾');
+      if (opening && !document.getElementById('history-list').children.length) renderHistory();
+    }}
+
+    function renderHistory() {{
+      const list = document.getElementById('history-list');
+      if (!HISTORY.length) {{
+        list.innerHTML = '<div style="padding:14px 20px;color:#9ca3af;font-size:0.84rem;">Nenhum snapshot anterior encontrado.</div>';
+        return;
+      }}
+      const TYPE_MAP = {{'FIXED_INCOME':'Renda Fixa','EQUITY':'Ações','ETF':'ETF','MUTUAL_FUND':'Fundos','FUND':'Fundos'}};
+      list.innerHTML = HISTORY.map((snap, i) => {{
+        const dt  = new Date(snap.timestamp.replace('T',' '));
+        const ts  = dt.toLocaleDateString('pt-BR') + ' às ' + dt.toLocaleTimeString('pt-BR',{{hour:'2-digit',minute:'2-digit'}});
+        const val = snap.totals.current;
+        const fv  = 'R$ ' + val.toLocaleString('pt-BR',{{minimumFractionDigits:2,maximumFractionDigits:2}});
+        const n   = snap.investments ? snap.investments.length : '—';
+        const rows = (snap.investments || [])
+          .slice().sort((a,b) => ((TYPE_MAP[a.type]||a.type||'').localeCompare(TYPE_MAP[b.type]||b.type||'')) || (a.name||'').localeCompare(b.name||''))
+          .map(inv => {{
+            const v = (inv.value||0).toLocaleString('pt-BR',{{minimumFractionDigits:2,maximumFractionDigits:2}});
+            return `<tr><td>${{inv.name||'-'}}</td><td>${{TYPE_MAP[inv.type]||inv.type||'-'}}</td>`+
+                   `<td style="text-align:right;font-variant-numeric:tabular-nums;">R$ ${{v}}</td></tr>`;
+          }}).join('');
+        const table = `<table><thead><tr>
+            <th style="text-align:left">Nome</th>
+            <th style="text-align:left">Tipo</th>
+            <th style="text-align:right">Valor</th>
+          </tr></thead><tbody>${{rows}}</tbody></table>`;
+        return `<div class="history-row" onclick="toggleHistoryDetail(${{i}})">
+            <span class="h-ts">${{ts}}</span>
+            <span class="h-val">${{fv}}</span>
+            <span class="h-cnt">${{n}} ativos</span>
+            <button class="h-btn" id="hbtn-${{i}}">ver ▸</button>
+          </div>
+          <div class="history-detail" id="hdetail-${{i}}">${{table}}</div>`;
+      }}).join('');
+    }}
+
+    function toggleHistoryDetail(i) {{
+      const detail = document.getElementById('hdetail-'+i);
+      const btn    = document.getElementById('hbtn-'+i);
+      const opening = detail.style.display !== 'block';
+      detail.style.display = opening ? 'block' : 'none';
+      btn.textContent = opening ? 'fechar ▾' : 'ver ▸';
+    }}
+
+    // ── Ordenação da tabela de ativos ────────────────────────────────────────
     let _sortDir = {{}};
     function sortTable(col) {{
       const tbody = document.querySelector('#assetsTable tbody');
