@@ -288,7 +288,7 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     avanco_note = f"desde {prev_ts_str}" if prev_ts_str else "primeira execução"
 
     rows_html = ""
-    for inv in sorted(investments, key=lambda x: x.get("value", 0) or 0, reverse=True):
+    for inv in sorted(investments, key=lambda x: (get_type_label(x.get("type", "OTHER") or "OTHER"), x.get("name") or "")):
         inv_id = inv.get("id", "")
         asset_delta = asset_deltas.get(inv_id)
         if asset_delta is not None:
