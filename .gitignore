@@ -1,2 +1,3 @@
 *.html
 .env
+pluggy-investment-report/tmp/allocation_targets.json

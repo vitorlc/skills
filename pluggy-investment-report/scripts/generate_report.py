@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from html import escape as _e
 
+TARGETS_PATH = str(Path(__file__).resolve().parent.parent / "tmp" / "allocation_targets.json")
+
 
 def format_currency(value: float) -> str:
     sign = "-R$ " if value < 0 else "R$ "
@@ -29,6 +31,10 @@ def format_delta(value: float) -> tuple[str, str]:
     return "—", "neutral"
 
 
+def format_percentage(value: float) -> str:
+    return f"{value:.2f}%".replace(".", ",")
+
+
 def format_date(value: str | None) -> str:
     if not value:
         return "-"
@@ -43,6 +49,7 @@ def get_type_label(type_code: str) -> str:
     return {
         "FIXED_INCOME": "Renda Fixa",
         "EQUITY": "Ações",
+        "STOCK": "Ações",
         "FUND": "Fundos",
         "MUTUAL_FUND": "Fundos",
         "ETF": "ETF",
@@ -79,6 +86,14 @@ def load_diff(path: str | None) -> dict | None:
         return None
 
 
+def load_targets() -> dict:
+    try:
+        with open(TARGETS_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
 def build_asset_deltas(diff: dict | None) -> dict:
     """Returns {investment_id: value_delta}. New assets get value_curr as delta."""
     if not diff or diff.get("first_run"):
@@ -93,7 +108,145 @@ def build_asset_deltas(diff: dict | None) -> dict:
     return deltas
 
 
-def generate_html(investments: list, output_path: str, diff: dict | None) -> str:
+def build_allocation_analysis(
+    type_totals: dict, targets: dict, total_current: float
+) -> dict | None:
+    if not targets or not total_current:
+        return None
+
+    rows = []
+    for category, target_pct in targets.items():
+        actual_value = type_totals.get(category, 0)
+        actual_pct = round(actual_value / total_current * 100, 1)
+        deviation = round(actual_pct - target_pct, 1)
+        rows.append({
+            "category": category,
+            "target_pct": target_pct,
+            "actual_pct": actual_pct,
+            "deviation": deviation,
+        })
+
+    if not rows:
+        return None
+
+    recommendations = []
+    for row in sorted(rows, key=lambda r: abs(r["deviation"]), reverse=True):
+        if abs(row["deviation"]) >= 2:
+            if row["deviation"] > 0:
+                recommendations.append(
+                    f"↓ Reduzir {row['category']} ({row['deviation']:+.0f}% acima da meta)"
+                )
+            else:
+                recommendations.append(
+                    f"↑ Comprar {row['category']} ({row['deviation']:.0f}% abaixo da meta)"
+                )
+
+    worst = max(rows, key=lambda r: abs(r["deviation"]))
+    return {
+        "rows": rows,
+        "recommendations": recommendations,
+        "imbalance": {"category": worst["category"], "pct": worst["deviation"]},
+    }
+
+
+def _build_targets_panel_html(type_totals: dict, targets: dict) -> str:
+    inputs_html = ""
+    for label in type_totals:
+        val = targets.get(label, "")
+        inputs_html += (
+            f'\n        <div class="target-row">'
+            f'<label>{_e(label)}</label>'
+            f'<input type="number" class="target-input" data-category="{_e(label)}"'
+            f' min="0" max="100" step="0.1" value="{_e(str(val))}" oninput="updateTargetsTotal()">'
+            f'<span>%</span></div>'
+        )
+    return (
+        '<div class="targets-box">'
+        '<div class="targets-header">'
+        '<h2>Metas de Alocação</h2>'
+        '<button id="toggleTargetsBtn" class="toggle-btn" onclick="toggleTargets()">'
+        'Configurar ▾</button>'
+        '</div>'
+        '<div id="targetsPanel" style="display:none;" class="targets-panel">'
+        f'<div class="targets-grid">{inputs_html}\n        </div>'
+        '<div class="targets-footer">'
+        '<span id="targetsTotal" class="targets-total">Total: 0%</span>'
+        '<button class="save-btn" onclick="saveTargets()">⬇ Salvar metas</button>'
+        '</div>'
+        '<p class="targets-note">Após salvar, mova <code>allocation_targets.json</code>'
+        ' para <code>pluggy-investment-report/tmp/</code> e regere o relatório.</p>'
+        '</div>'
+        '</div>'
+    )
+
+
+def _build_allocation_breakdown_html(type_totals: dict, total_current: float) -> str:
+    if not type_totals or not total_current:
+        return ""
+
+    sorted_items = sorted(type_totals.items(), key=lambda x: x[1], reverse=True)
+    rows_html = ""
+    for label, value in sorted_items:
+        pct = value / total_current * 100
+        bar_width = round(pct, 1)
+        rows_html += (
+            f'<div class="alloc-row">'
+            f'<span class="alloc-cat">{_e(label)}</span>'
+            f'<div class="alloc-bar-wrap"><div class="alloc-bar" style="width:{bar_width}%"></div></div>'
+            f'<span class="alloc-pct">{format_percentage(pct)}</span>'
+            f'<span class="alloc-val">{format_currency(value)}</span>'
+            f'</div>'
+        )
+
+    return (
+        '<div class="alloc-box">'
+        '<h2>Alocação da Carteira</h2>'
+        f'<div class="alloc-grid">{rows_html}</div>'
+        '</div>'
+    )
+
+
+def _build_analysis_html(analysis: dict | None) -> str:
+    if not analysis:
+        return ""
+
+    rows_html = ""
+    for row in analysis["rows"]:
+        dev = row["deviation"]
+        badge_cls = "badge-ok" if abs(dev) <= 1 else ("badge-over" if dev > 0 else "badge-under")
+        sign = "+" if dev > 0 else ""
+        rows_html += (
+            f'<div class="analysis-row">'
+            f'<span class="analysis-cat">{_e(row["category"])}</span>'
+            f'<span class="analysis-meta">meta {_e(str(row["target_pct"]))}%</span>'
+            f'<span class="analysis-atual">atual {_e(str(row["actual_pct"]))}%</span>'
+            f'<span class="badge {badge_cls}">{sign}{dev}%</span>'
+            f'</div>'
+        )
+
+    recs_html = ""
+    for rec in analysis["recommendations"]:
+        pill_cls = "pill-buy" if rec.startswith("↑") else "pill-sell"
+        recs_html += f'<span class="pill {pill_cls}">{_e(rec)}</span>\n'
+
+    imb = analysis["imbalance"]
+    sign = "+" if imb["pct"] > 0 else ""
+    imbalance_str = (
+        f"⚠ Carteira desbalanceada em {abs(imb['pct']):.0f}%"
+        f" — maior desvio: {imb['category']} ({sign}{imb['pct']:.0f}%)"
+    )
+
+    return (
+        '<div class="analysis-box">'
+        '<h2>Análise de Alocação</h2>'
+        f'<div class="analysis-grid">{rows_html}</div>'
+        f'<div class="analysis-recs">{recs_html}</div>'
+        f'<div class="imbalance-msg">{_e(imbalance_str)}</div>'
+        '</div>'
+    )
+
+
+def generate_html(investments: list, output_path: str, diff: dict | None = None, targets: dict | None = None) -> str:
     investments = [i for i in investments if (i.get("value") or 0) > 0]
 
     total_current = sum(i.get("value", 0) or 0 for i in investments)
@@ -116,6 +269,12 @@ def generate_html(investments: list, output_path: str, diff: dict | None) -> str
     for inv in investments:
         label = get_type_label(inv.get("type", "OTHER"))
         type_totals[label] = type_totals.get(label, 0) + (inv.get("value", 0) or 0)
+
+    targets = targets or {}
+    analysis = build_allocation_analysis(type_totals, targets, total_current)
+    targets_panel_html = _build_targets_panel_html(type_totals, targets)
+    analysis_html = _build_analysis_html(analysis)
+    allocation_breakdown_html = _build_allocation_breakdown_html(type_totals, total_current)
 
     type_labels_js = json.dumps(list(type_totals.keys()))
     type_values_js = json.dumps([round(v, 2) for v in type_totals.values()])
@@ -237,6 +396,96 @@ def generate_html(investments: list, output_path: str, diff: dict | None) -> str
       font-size: 0.95rem; cursor: pointer; font-weight: 600;
     }}
     .print-btn:hover {{ background: #2d2d4e; }}
+    .alloc-box {{
+      background: #fff; border-radius: 12px; padding: 20px 24px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 28px;
+    }}
+    .alloc-box h2 {{
+      font-size: 0.9rem; font-weight: 600; color: #444; margin-bottom: 16px;
+    }}
+    .alloc-grid {{ display: flex; flex-direction: column; gap: 10px; }}
+    .alloc-row {{
+      display: grid; grid-template-columns: 130px 1fr 60px 130px;
+      align-items: center; gap: 12px; font-size: 0.87rem;
+    }}
+    .alloc-cat {{ color: #444; font-weight: 500; }}
+    .alloc-bar-wrap {{
+      background: #f0f2f5; border-radius: 999px; height: 8px; overflow: hidden;
+    }}
+    .alloc-bar {{
+      background: #3b82f6; height: 100%; border-radius: 999px;
+      transition: width .4s ease;
+    }}
+    .alloc-pct {{ text-align: right; font-weight: 600; color: #1a1a2e; font-variant-numeric: tabular-nums; }}
+    .alloc-val {{ text-align: right; color: #666; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+    .targets-box {{
+      background: #fff; border-radius: 12px; padding: 20px 24px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 28px;
+    }}
+    .targets-header {{
+      display: flex; justify-content: space-between; align-items: center;
+    }}
+    .targets-header h2 {{
+      font-size: 0.9rem; font-weight: 600; color: #444; margin-bottom: 0;
+    }}
+    .toggle-btn {{
+      background: #3b82f6; color: #fff; border: none;
+      padding: 6px 18px; border-radius: 20px; font-size: 0.82rem;
+      cursor: pointer; font-weight: 500;
+    }}
+    .toggle-btn:hover {{ background: #2563eb; }}
+    .targets-panel {{ margin-top: 16px; }}
+    .targets-grid {{ display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }}
+    .target-row {{
+      display: grid; grid-template-columns: 1fr 72px 20px;
+      align-items: center; gap: 8px; font-size: 0.87rem;
+    }}
+    .target-row label {{ color: #444; }}
+    .target-row input {{
+      border: 1px solid #d1d5db; border-radius: 6px;
+      padding: 4px 8px; font-size: 0.87rem; text-align: right; width: 100%;
+    }}
+    .target-row input:focus {{ outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px #bfdbfe; }}
+    .targets-footer {{
+      display: flex; justify-content: space-between; align-items: center;
+      padding-top: 12px; border-top: 1px solid #f0f0f0; margin-bottom: 10px;
+    }}
+    .targets-total {{ font-size: 0.85rem; font-weight: 600; color: #dc2626; transition: color .2s; }}
+    .save-btn {{
+      background: #1a1a2e; color: #fff; border: none;
+      padding: 8px 20px; border-radius: 8px; font-size: 0.85rem;
+      cursor: pointer; font-weight: 500;
+    }}
+    .save-btn:hover {{ background: #2d2d4e; }}
+    .targets-note {{ font-size: 0.75rem; color: #9ca3af; margin-top: 0; }}
+    .targets-note code {{ background: #f3f4f6; padding: 1px 4px; border-radius: 3px; font-size: 0.72rem; }}
+    .analysis-box {{
+      background: #1a1a2e; color: #fff; border-radius: 12px;
+      padding: 20px 24px; margin-bottom: 28px;
+    }}
+    .analysis-box h2 {{
+      font-size: 0.82rem; font-weight: 700; color: #94a3b8;
+      text-transform: uppercase; letter-spacing: .08em; margin-bottom: 16px;
+    }}
+    .analysis-grid {{ display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }}
+    .analysis-row {{
+      display: grid; grid-template-columns: 1fr 90px 90px 52px;
+      align-items: center; gap: 8px; font-size: 0.87rem;
+    }}
+    .analysis-cat {{ color: #e2e8f0; }}
+    .analysis-meta {{ color: #94a3b8; text-align: right; font-size: 0.8rem; }}
+    .analysis-atual {{ color: #e2e8f0; text-align: right; }}
+    .badge-ok    {{ background: #16a34a; color: #fff; border-radius: 4px; padding: 2px 6px; font-size: 0.75rem; text-align: center; }}
+    .badge-over  {{ background: #ef4444; color: #fff; border-radius: 4px; padding: 2px 6px; font-size: 0.75rem; text-align: center; }}
+    .badge-under {{ background: #3b82f6; color: #fff; border-radius: 4px; padding: 2px 6px; font-size: 0.75rem; text-align: center; }}
+    .analysis-recs {{ display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }}
+    .pill        {{ padding: 4px 14px; border-radius: 20px; font-size: 0.82rem; font-weight: 600; }}
+    .pill-buy    {{ background: #3b82f6; color: #fff; }}
+    .pill-sell   {{ background: #ef4444; color: #fff; }}
+    .imbalance-msg {{
+      background: #0f172a; border-radius: 8px; padding: 10px 14px;
+      font-size: 0.85rem; color: #f59e0b; font-weight: 600;
+    }}
     @media print {{
       body {{ background: #fff; padding: 8px; }}
       .print-btn {{ display: none; }}
@@ -282,6 +531,10 @@ def generate_html(investments: list, output_path: str, diff: dict | None) -> str
       </div>
     </div>
 
+    {allocation_breakdown_html}
+
+    {targets_panel_html}
+
     <div class="table-box">
       <h2>Ativos ({n} {asset_word})</h2>
       <table id="assetsTable">
@@ -299,6 +552,8 @@ def generate_html(investments: list, output_path: str, diff: dict | None) -> str
         </tbody>
       </table>
     </div>
+
+    {analysis_html}
 
     <button class="print-btn" onclick="window.print()">Imprimir / Salvar como PDF</button>
   </div>
@@ -362,6 +617,49 @@ def generate_html(investments: list, output_path: str, diff: dict | None) -> str
       }});
       rows.forEach(r => tbody.appendChild(r));
     }}
+
+    function toggleTargets() {{
+      const panel = document.getElementById('targetsPanel');
+      const btn = document.getElementById('toggleTargetsBtn');
+      const opening = panel.style.display === 'none';
+      panel.style.display = opening ? 'block' : 'none';
+      btn.textContent = opening ? 'Fechar ✕' : 'Configurar ▾';
+      if (opening) updateTargetsTotal();
+    }}
+
+    function updateTargetsTotal() {{
+      const inputs = document.querySelectorAll('.target-input');
+      let total = 0;
+      inputs.forEach(inp => {{ total += parseFloat(inp.value) || 0; }});
+      total = Math.round(total * 10) / 10;
+      const el = document.getElementById('targetsTotal');
+      el.textContent = 'Total: ' + total + '%';
+      el.style.color = Math.abs(total - 100) < 0.05 ? '#16a34a' : '#dc2626';
+    }}
+
+    function saveTargets() {{
+      const inputs = document.querySelectorAll('.target-input');
+      const targets = {{}};
+      let total = 0;
+      inputs.forEach(inp => {{
+        const val = parseFloat(inp.value) || 0;
+        targets[inp.dataset.category] = val;
+        total += val;
+      }});
+      total = Math.round(total * 10) / 10;
+      if (Math.abs(total - 100) > 0.05) {{
+        alert('As metas devem somar 100%. Total atual: ' + total + '%');
+        return;
+      }}
+      const blob = new Blob([JSON.stringify(targets, null, 2)], {{type: 'application/json'}});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'allocation_targets.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+    }}
   </script>
 </body>
 </html>"""
@@ -406,5 +704,6 @@ if __name__ == "__main__":
 
     investments = data if isinstance(data, list) else data.get("investments", [])
     diff = load_diff(diff_path)
-    result = generate_html(investments, output_path, diff)
+    targets = load_targets()
+    result = generate_html(investments, output_path, diff, targets=targets)
     print(f"Relatório gerado: {result}")
