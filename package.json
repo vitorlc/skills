@@ -1,15 +1,21 @@
 {
   "name": "@vitorlc/skills",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Personal AI agent skills — install globally via npx",
   "type": "module",
   "bin": {
-    "skills": "./bin/skills.mjs"
+    "skills": "bin/skills.mjs"
   },
   "files": [
     "bin",
     "src",
-    "skills"
+    "skills/*/SKILL.md",
+    "skills/*/scripts/**",
+    "skills/*/references/**",
+    "skills/*/styles.json",
+    "!**/__pycache__/**",
+    "!**/*.pyc",
+    "!**/tests/**"
   ],
   "engines": {
     "node": ">=18"
