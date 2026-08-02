@@ -1,0 +1,583 @@
+{
+  "source": "openflights-g3",
+  "asOf": "2026-08-02",
+  "count": 72,
+  "airports": [
+    {
+      "code": "AEP",
+      "name": "Aeroporto Jorge Newbery",
+      "location": "Buenos Aires",
+      "country": "AR",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "AJU",
+      "name": "Aeroporto Internacional de Aracaju / Santa Maria",
+      "location": "Aracaju",
+      "country": "BR",
+      "state": "SE",
+      "region": "domestic"
+    },
+    {
+      "code": "ASU",
+      "name": "Aeroporto Internacional Silvio Pettirossi",
+      "location": "Assunção",
+      "country": "PY",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "AUA",
+      "name": "Aeroporto Internacional Rainha Beatrix",
+      "location": "Oranjestad",
+      "country": "AW",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "BEL",
+      "name": "Aeroporto Internacional de Belém / Val de Cans",
+      "location": "Belém",
+      "country": "BR",
+      "state": "PA",
+      "region": "domestic"
+    },
+    {
+      "code": "BGI",
+      "name": "Aeroporto Internacional Grantley Adams",
+      "location": "Bridgetown",
+      "country": "BB",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "BPS",
+      "name": "Aeroporto Internacional de Porto Seguro",
+      "location": "Porto Seguro",
+      "country": "BR",
+      "state": "BA",
+      "region": "domestic"
+    },
+    {
+      "code": "BSB",
+      "name": "Aeroporto Internacional de Brasília / Presidente Jucelino Kubitschek",
+      "location": "Brasília",
+      "country": "BR",
+      "state": "DF",
+      "region": "domestic"
+    },
+    {
+      "code": "BUE",
+      "name": "Buenos Aires — todos os aeroportos",
+      "location": "Buenos Aires",
+      "country": "AR",
+      "state": null,
+      "region": "meta"
+    },
+    {
+      "code": "BVB",
+      "name": "Aeroporto Internacional de Boa Vista / Atlas Brasil Cantanhede",
+      "location": "Boa Vista",
+      "country": "BR",
+      "state": "RR",
+      "region": "domestic"
+    },
+    {
+      "code": "CCS",
+      "name": "Aeroporto Internacional Simón Bolívar",
+      "location": "Caracas",
+      "country": "VE",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "CFB",
+      "name": "Aeroporto Internacional de Cabo Frio",
+      "location": "Cabo Frio",
+      "country": "BR",
+      "state": "RJ",
+      "region": "domestic"
+    },
+    {
+      "code": "CGB",
+      "name": "Aeroporto Internacional de Cuiabá / Marechal Rondon",
+      "location": "Cuiabá",
+      "country": "BR",
+      "state": "MT",
+      "region": "domestic"
+    },
+    {
+      "code": "CGH",
+      "name": "Aeroporto Internacional de São Paulo / Congonhas",
+      "location": "Congonhas",
+      "country": "BR",
+      "state": "SP",
+      "region": "domestic"
+    },
+    {
+      "code": "CGR",
+      "name": "Aeroporto Internacional de Campo Grande",
+      "location": "Campo Grande",
+      "country": "BR",
+      "state": "MS",
+      "region": "domestic"
+    },
+    {
+      "code": "CLV",
+      "name": "Aeroporto de Caldas Novas / Nelson Ribeiro Guimarães",
+      "location": "Caldas Novas",
+      "country": "BR",
+      "state": "GO",
+      "region": "domestic"
+    },
+    {
+      "code": "CNF",
+      "name": "Aeroporto Internacional de Minas Gerais / Confins – Tancredo Neves",
+      "location": "Confins",
+      "country": "BR",
+      "state": "MG",
+      "region": "domestic"
+    },
+    {
+      "code": "COR",
+      "name": "Aeroporto Internacional Ingeniero Ambrosio Taravella",
+      "location": "Córdoba",
+      "country": "AR",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "CPV",
+      "name": "Aeroporto de Campina Grande / Presidente João Suassuna",
+      "location": "Campina Grande",
+      "country": "BR",
+      "state": "PB",
+      "region": "domestic"
+    },
+    {
+      "code": "CWB",
+      "name": "Aeroporto Internacional de Curitiba / Afonso Pena",
+      "location": "Curitiba",
+      "country": "BR",
+      "state": "PR",
+      "region": "domestic"
+    },
+    {
+      "code": "CXJ",
+      "name": "Aeroporto Regional de Caxias do Sul / Hugo Cantergiani",
+      "location": "Caxias do Sul",
+      "country": "BR",
+      "state": "RS",
+      "region": "domestic"
+    },
+    {
+      "code": "CZS",
+      "name": "Aeroporto Internacional de Cruzeiro do Sul",
+      "location": "Cruzeiro do Sul",
+      "country": "BR",
+      "state": "AC",
+      "region": "domestic"
+    },
+    {
+      "code": "DTW",
+      "name": "Aeroporto Metropolitano de Detroit",
+      "location": "Detroit",
+      "country": "US",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "EZE",
+      "name": "Aeroporto Internacional Ministro Pistarini",
+      "location": "Buenos Aires",
+      "country": "AR",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "FEN",
+      "name": "Aeroporto de Fernando de Noronha",
+      "location": "Fernando de Noronha",
+      "country": "BR",
+      "state": "PE",
+      "region": "domestic"
+    },
+    {
+      "code": "FLN",
+      "name": "Aeroporto Internacional de Florianópolis / Hercílio Luz",
+      "location": "Florianópolis",
+      "country": "BR",
+      "state": "SC",
+      "region": "domestic"
+    },
+    {
+      "code": "FOR",
+      "name": "Aeroporto Internacional de Fortaleza / Pinto Martins",
+      "location": "Fortaleza",
+      "country": "BR",
+      "state": "CE",
+      "region": "domestic"
+    },
+    {
+      "code": "GIG",
+      "name": "Aeroporto Internacional do Rio de Janeiro / Galeão-Antônio Carlos Jobim",
+      "location": "Galeão",
+      "country": "BR",
+      "state": "RJ",
+      "region": "domestic"
+    },
+    {
+      "code": "GRU",
+      "name": "Aeroporto Internacional de São Paulo/Guarulhos-Governador André Franco Motoro",
+      "location": "Guarulhos",
+      "country": "BR",
+      "state": "SP",
+      "region": "domestic"
+    },
+    {
+      "code": "GYN",
+      "name": "Aeroporto de Goiânia / Santa Genoveva",
+      "location": "Goiânia",
+      "country": "BR",
+      "state": "GO",
+      "region": "domestic"
+    },
+    {
+      "code": "IGU",
+      "name": "Aeroporto Internacional de Foz do Iguaçu",
+      "location": "Foz do Iguaçu",
+      "country": "BR",
+      "state": "PR",
+      "region": "domestic"
+    },
+    {
+      "code": "IMP",
+      "name": "Aeroporto de Imperatriz – Prefeito Renato Moreira",
+      "location": "Imperatriz",
+      "country": "BR",
+      "state": "MA",
+      "region": "domestic"
+    },
+    {
+      "code": "IOS",
+      "name": "Aeroporto de Ilhéus/Bahia-Jorge Amado",
+      "location": "Ilhéus",
+      "country": "BR",
+      "state": "BA",
+      "region": "domestic"
+    },
+    {
+      "code": "JDO",
+      "name": "Aeroporto de Juazeiro do Norte – Orlando Bezerra",
+      "location": "Juazeiro do Norte",
+      "country": "BR",
+      "state": "CE",
+      "region": "domestic"
+    },
+    {
+      "code": "JFK",
+      "name": "Aeroporto Internacional John F. Kennedy",
+      "location": "Nova York",
+      "country": "US",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "JOI",
+      "name": "Aeroporto de Joinville / Lauro Carneiro de Loyola",
+      "location": "Joinville",
+      "country": "BR",
+      "state": "SC",
+      "region": "domestic"
+    },
+    {
+      "code": "JPA",
+      "name": "Aeroporto Internacional de João Pessoa / Presidente Castro Pinto",
+      "location": "João Pessoa",
+      "country": "BR",
+      "state": "PB",
+      "region": "domestic"
+    },
+    {
+      "code": "JTC",
+      "name": "Aeroporto Estadual de Bauru/Arealva",
+      "location": "Bauru",
+      "country": "BR",
+      "state": "SP",
+      "region": "domestic"
+    },
+    {
+      "code": "LDB",
+      "name": "Aeroporto de Londrina / Governador José Richa",
+      "location": "Londrina",
+      "country": "BR",
+      "state": "PR",
+      "region": "domestic"
+    },
+    {
+      "code": "MAB",
+      "name": "Aeroporto de Marabá",
+      "location": "Marabá",
+      "country": "BR",
+      "state": "PA",
+      "region": "domestic"
+    },
+    {
+      "code": "MAO",
+      "name": "Aeroporto Internacional de Manaus / Eduardo Gomes",
+      "location": "Manaus",
+      "country": "BR",
+      "state": "AM",
+      "region": "domestic"
+    },
+    {
+      "code": "MCO",
+      "name": "Aeroporto Internacional de Orlando",
+      "location": "Orlando",
+      "country": "US",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "MCP",
+      "name": "Aeroporto Internacional de Macapá",
+      "location": "Macapá",
+      "country": "BR",
+      "state": "AP",
+      "region": "domestic"
+    },
+    {
+      "code": "MCZ",
+      "name": "Aeroporto de Maceió / Zumbi dos Palmares",
+      "location": "Maceió",
+      "country": "BR",
+      "state": "AL",
+      "region": "domestic"
+    },
+    {
+      "code": "MGF",
+      "name": "Aeroporto Regional de Maringá / Silvio Name Junior",
+      "location": "Maringá",
+      "country": "BR",
+      "state": "PR",
+      "region": "domestic"
+    },
+    {
+      "code": "MIA",
+      "name": "Aeroporto Internacional de Miami",
+      "location": "Miami",
+      "country": "US",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "MOC",
+      "name": "Aeroporto de Montes Claros/Mário Ribeiro",
+      "location": "Montes Claros",
+      "country": "BR",
+      "state": "MG",
+      "region": "domestic"
+    },
+    {
+      "code": "MVD",
+      "name": "Aeroporto Internacional de Carrasco",
+      "location": "Montevidéu",
+      "country": "UY",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "NAT",
+      "name": "Aeroporto Internacional de Natal / Augusto Severo",
+      "location": "Natal",
+      "country": "BR",
+      "state": "RN",
+      "region": "domestic"
+    },
+    {
+      "code": "NVT",
+      "name": "Aeroporto Internacional de Navegantes / Ministro Victor Konder",
+      "location": "Navegantes",
+      "country": "BR",
+      "state": "SC",
+      "region": "domestic"
+    },
+    {
+      "code": "PMW",
+      "name": "Aeroporto de Palmas/Brigadeiro Lysias Rodrigues",
+      "location": "Palmas",
+      "country": "BR",
+      "state": "TO",
+      "region": "domestic"
+    },
+    {
+      "code": "PNZ",
+      "name": "Aeroporto de Petrolina / Senador Nilo Coelho",
+      "location": "Petrolina",
+      "country": "BR",
+      "state": "PE",
+      "region": "domestic"
+    },
+    {
+      "code": "POA",
+      "name": "Aeroporto Internacional de Porto Alegre / Salgado Filho",
+      "location": "Porto Alegre",
+      "country": "BR",
+      "state": "RS",
+      "region": "domestic"
+    },
+    {
+      "code": "PPB",
+      "name": "Aeroporto Estadual de Presidente Prudente",
+      "location": "Presidente Prudente",
+      "country": "BR",
+      "state": "SP",
+      "region": "domestic"
+    },
+    {
+      "code": "PUJ",
+      "name": "Aeroporto Internacional de Punta Cana",
+      "location": "Punta Cana",
+      "country": "DO",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "PVH",
+      "name": "Aeroporto Internacional de Porto Velho / Governador Jorge Teixeira de Oliveira",
+      "location": "Porto Velho",
+      "country": "BR",
+      "state": "RO",
+      "region": "domestic"
+    },
+    {
+      "code": "RBR",
+      "name": "Aeroporto Internacional de Rio Branco / Plácido de Castro",
+      "location": "Rio Branco",
+      "country": "BR",
+      "state": "AC",
+      "region": "domestic"
+    },
+    {
+      "code": "REC",
+      "name": "Aeroporto Internacional do Recife/ Guararapes – Gilberto Freyre",
+      "location": "Recife",
+      "country": "BR",
+      "state": "PE",
+      "region": "domestic"
+    },
+    {
+      "code": "RIO",
+      "name": "Rio de Janeiro — todos os aeroportos",
+      "location": "Rio de Janeiro",
+      "country": "BR",
+      "state": "RJ",
+      "region": "meta"
+    },
+    {
+      "code": "ROS",
+      "name": "Aeroporto Internacional de Rosario",
+      "location": "Rosario",
+      "country": "AR",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "SAO",
+      "name": "São Paulo — todos os aeroportos",
+      "location": "São Paulo",
+      "country": "BR",
+      "state": "SP",
+      "region": "meta"
+    },
+    {
+      "code": "SDQ",
+      "name": "Aeroporto Internacional Las Américas",
+      "location": "Santo Domingo",
+      "country": "DO",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "SDU",
+      "name": "Aeroporto Santos Dumont",
+      "location": "Santos Dumont",
+      "country": "BR",
+      "state": "RJ",
+      "region": "domestic"
+    },
+    {
+      "code": "SLZ",
+      "name": "Aeroporto Internacional de São Luís / Marechal Cunha Machado",
+      "location": "São Luís",
+      "country": "BR",
+      "state": "MA",
+      "region": "domestic"
+    },
+    {
+      "code": "SSA",
+      "name": "Aeroporto Internacional de Salvador / Deputado Luis Eduardo Magalhães",
+      "location": "Salvador",
+      "country": "BR",
+      "state": "BA",
+      "region": "domestic"
+    },
+    {
+      "code": "STM",
+      "name": "Aeroporto de Santarém / Maestro Wilson Fonseca",
+      "location": "Santarém",
+      "country": "BR",
+      "state": "PA",
+      "region": "domestic"
+    },
+    {
+      "code": "THE",
+      "name": "Aeroporto de Teresina – Senador Petrônio Portella",
+      "location": "Teresina",
+      "country": "BR",
+      "state": "PI",
+      "region": "domestic"
+    },
+    {
+      "code": "UDI",
+      "name": "Aeroporto de Uberlândia / Ten. Cel. Av. César Bombonato",
+      "location": "Uberlândia",
+      "country": "BR",
+      "state": "MG",
+      "region": "domestic"
+    },
+    {
+      "code": "VCP",
+      "name": "Aeroporto Internacional de Viracopos / Campinas",
+      "location": "Campinas",
+      "country": "BR",
+      "state": "SP",
+      "region": "domestic"
+    },
+    {
+      "code": "VIX",
+      "name": "Aeroporto de Vitória – Eurico de Aguiar Salles",
+      "location": "Vitória",
+      "country": "BR",
+      "state": "ES",
+      "region": "domestic"
+    },
+    {
+      "code": "VVI",
+      "name": "Aeroporto Internacional Viru Viru",
+      "location": "Santa Cruz de la Sierra",
+      "country": "BO",
+      "state": null,
+      "region": "international"
+    },
+    {
+      "code": "XAP",
+      "name": "Aeroporto de Chapecó – Serafin Enoss Bertaso",
+      "location": "Chapecó",
+      "country": "BR",
+      "state": "SC",
+      "region": "domestic"
+    }
+  ]
+}

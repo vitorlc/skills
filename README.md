@@ -6,6 +6,7 @@ Personal AI agent skills. Install or update globally from any machine with `npx`
 
 ```bash
 npx @vitorlc/skills pluggy-investment-report
+npx @vitorlc/skills smiles-passagens
 ```
 
 Installs into:
@@ -42,6 +43,7 @@ npx @vitorlc/skills which <skill>
 | Skill | Description |
 |-------|-------------|
 | `pluggy-investment-report` | Consolidated investment report from Pluggy-connected accounts |
+| `smiles-passagens` | Smiles/GOL round-trip miles search (calendar, SMILES_CLUB) |
 
 ### Pluggy env vars
 
@@ -51,6 +53,15 @@ export PLUGGY_CLIENT_SECRET="..."
 ```
 
 Never commit credentials. Local state under the installed skill (`tmp/`, `data/`) is preserved across updates.
+
+### Smiles search (no secrets required)
+
+```bash
+node ~/.claude/skills/smiles-passagens/scripts/search.mjs \
+  -o SAO -d GIG --departure 15/12/2026 --return 22/12/2026
+```
+
+Optional: `CALENDAR_API_URL` overrides the calendar endpoint. Airport DB covers GOL domestic + international destinations.
 
 ## Develop
 
