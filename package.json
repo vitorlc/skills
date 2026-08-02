@@ -9,6 +9,7 @@
   "files": [
     "bin",
     "src",
+    "scripts/skill_dir.sh",
     "skills/*/SKILL.md",
     "skills/*/scripts/**",
     "skills/*/references/**",

@@ -16,22 +16,8 @@ Consulta pontual de ida/volta no calendário de milhas (fare **SMILES_CLUB**). N
 ## Step 0 — Locate skill directory
 
 ```bash
-SKILL_DIR=""
-for d in \
-  "$HOME/.claude/skills/smiles-passagens" \
-  "$HOME/.config/opencode/skills/smiles-passagens" \
-  "$HOME/.agents/skills/smiles-passagens"; do
-  if [ -f "$d/scripts/search.mjs" ]; then
-    SKILL_DIR="$d"
-    break
-  fi
-done
-[ -n "$SKILL_DIR" ] \
-  && echo "✓ Skill dir OK: $SKILL_DIR" \
-  || echo "✗ Not installed — run: npx @vitorlc/skills smiles-passagens"
+SKILL_DIR=""; for d in "$HOME/.claude/skills/smiles-passagens" "$HOME/.config/opencode/skills/smiles-passagens" "$HOME/.agents/skills/smiles-passagens"; do [ -f "$d/scripts/search.mjs" ] && { SKILL_DIR="$d"; break; }; done && echo "✓ $SKILL_DIR" || { echo "✗ Not installed — run: npx @vitorlc/skills smiles-passagens"; exit 1; }
 ```
-
-If missing, stop and ask the user to install.
 
 ## Step 1 — Collect parameters
 

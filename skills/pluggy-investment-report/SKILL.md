@@ -49,26 +49,9 @@ Read `references/pluggy-api.md` before proceeding for full endpoint documentatio
 
 ### Step 0 — Locate the skill directory
 
-Set `SKILL_DIR` so subsequent steps reference the correct script and data paths.
-Try known global install locations (from `npx @vitorlc/skills`):
-
 ```bash
-SKILL_DIR=""
-for d in \
-  "$HOME/.claude/skills/pluggy-investment-report" \
-  "$HOME/.config/opencode/skills/pluggy-investment-report" \
-  "$HOME/.agents/skills/pluggy-investment-report"; do
-  if [ -d "$d/scripts" ]; then
-    SKILL_DIR="$d"
-    break
-  fi
-done
-[ -n "$SKILL_DIR" ] \
-  && echo "✓ Skill dir OK: $SKILL_DIR" \
-  || echo "✗ Skill not installed — run: npx @vitorlc/skills pluggy-investment-report"
+SKILL_DIR=""; for d in "$HOME/.claude/skills/pluggy-investment-report" "$HOME/.config/opencode/skills/pluggy-investment-report" "$HOME/.agents/skills/pluggy-investment-report"; do [ -d "$d/scripts" ] && { SKILL_DIR="$d"; break; }; done && echo "✓ $SKILL_DIR" || { echo "✗ Not installed — run: npx @vitorlc/skills pluggy-investment-report"; exit 1; }
 ```
-
-If the scripts are not found, stop and ask the user to install the skill before proceeding.
 
 ### Step 1 — Authenticate
 
