@@ -1,61 +1,69 @@
 ---
 name: pluggy-investment-report
-description: Use this skill whenever the user wants to view, analyze, or report on their investments or portfolio. Triggers on phrases like "gerar relatório de investimentos", "ver minha carteira", "quanto tenho investido", "meus rendimentos", "como estão meus ativos", "relatório financeiro", "dashboard de investimentos", "evolução da carteira", or any request to check, summarize, or visualize investment data from connected bank or broker accounts — even if the user doesn't explicitly mention "Pluggy" or "report".
+description: Gera relatório consolidado de investimentos de contas Pluggy. Use para "relatório de investimentos", "ver carteira", "meus rendimentos", "dashboard financeiro".
 ---
 
-# Pluggy Investment Report
+<essential_principles>
+- Gera relatório a partir de contas conectadas via Pluggy
+- **Nunca exiba credenciais** no chat ou terminal
+- Dados sensíveis salvos em `/tmp` com `chmod 600`
+- Scripts e referências em `$SKILL_DIR/` (descoberto no Step 0)
+</essential_principles>
 
-Generates a consolidated investment report from all Pluggy-connected accounts.
+<prerequisites>
+<first_time_setup>
+1. Acessar https://pluggy.ai → **Sign Up** (conta sandbox gratuita)
+2. No dashboard: **Apps** → **New App** → copiar **Client ID** e **Client Secret**
+3. Para conta de teste em sandbox: conector `201` (Nubank sandbox)
+</first_time_setup>
 
-## Prerequisites
+<credentials>
+Exportar antes de executar — **nunca peça para o usuário colar valores no chat**:
 
-### First-time setup (no credentials yet)
-
-1. Go to https://pluggy.ai → **Sign Up** (free sandbox account)
-2. In the dashboard: **Apps** → **New App** → copy your **Client ID** and **Client Secret**
-3. To connect a test account in sandbox:
-   - Use the Pluggy Connect Widget in the dashboard
-   - Or connect sandbox connector ID `201` (Nubank sandbox) for pre-populated test data
-
-### If user already has credentials
-
-Credentials must be set as shell environment variables — **never request, display, or transcribe credential values in the chat or terminal**.
-
-Tell the user to export them before running the skill:
 ```bash
-export PLUGGY_CLIENT_ID="your-client-id"
-export PLUGGY_CLIENT_SECRET="your-client-secret"
+export PLUGGY_CLIENT_ID="seu-client-id"
+export PLUGGY_CLIENT_SECRET="seu-client-secret"
 ```
 
-Check presence only (without revealing values):
+Verificar sem revelar valores:
+
 ```bash
 [ -n "$PLUGGY_CLIENT_ID" ]     && echo "✓ PLUGGY_CLIENT_ID set"     || echo "✗ PLUGGY_CLIENT_ID missing"
 [ -n "$PLUGGY_CLIENT_SECRET" ] && echo "✓ PLUGGY_CLIENT_SECRET set" || echo "✗ PLUGGY_CLIENT_SECRET missing"
 ```
+</credentials>
 
-### Sandbox / test data
+<sandbox>
+Se o usuário pedir demo/teste (ou passar `--sandbox`), seguir o setup em `references/pluggy-api.md` seção 5. Conector `201` para dados de teste.
+</sandbox>
+</prerequisites>
 
-If the user asks for a demo or test run (or passes `--sandbox`), follow the sandbox setup in `references/pluggy-api.md` section 5. Real credentials are still required; the difference is that you connect a sandbox account (connector 201) instead of real bank accounts.
+<intake>
+Pergunte ao usuário: **"O que você quer fazer?"**
 
-### Allocation targets (optional)
+1. **Resumo rápido** — Apenas sumário Markdown no terminal (steps 1-6)
+2. **Relatório completo** — Sumário + HTML com gráficos e diff histórico (steps 1-8)
+3. **Configurar metas de alocação** — Definir ou atualizar percentuais alvo por categoria
+</intake>
 
-If `$SKILL_DIR/tmp/allocation_targets.json` exists (where `$SKILL_DIR` is set in Step 0), the report will include an allocation analysis section comparing targets to actual percentages.
+<routing>
+- Resposta **1** → `workflows/quick-report.md`
+- Resposta **2** → `workflows/full-report.md`
+- Resposta **3** → `workflows/setup-targets.md`
+</routing>
 
-To set up targets for the first time: generate the report, open it in a browser, click **Configurar metas**, fill in the desired percentages (must sum to 100%), and click **⬇ Salvar metas**. Move the downloaded file to `$SKILL_DIR/tmp/allocation_targets.json`.
+<shared_process>
+Leia `references/pluggy-api.md` antes de prosseguir para documentação completa dos endpoints.
 
-## Execution Steps
-
-Read `references/pluggy-api.md` before proceeding for full endpoint documentation.
-
-### Step 0 — Locate the skill directory
+### Step 0 — Localizar diretório da skill
 
 ```bash
 SKILL_DIR=""; for d in "$HOME/.claude/skills/pluggy-investment-report" "$HOME/.config/opencode/skills/pluggy-investment-report" "$HOME/.agents/skills/pluggy-investment-report"; do [ -d "$d/scripts" ] && { SKILL_DIR="$d"; break; }; done && echo "✓ $SKILL_DIR" || { echo "✗ Not installed — run: npx @vitorlc/skills pluggy-investment-report"; exit 1; }
 ```
 
-### Step 1 — Authenticate
+### Step 1 — Autenticar
 
-Use env vars directly — never substitute literal values into the command:
+Usar env vars diretamente — **nunca substituir valores literais no comando**:
 
 ```bash
 export PLUGGY_API_KEY=$(curl -s -X POST https://api.pluggy.ai/auth \
@@ -68,35 +76,36 @@ export PLUGGY_API_KEY=$(curl -s -X POST https://api.pluggy.ai/auth \
   || echo "✗ Authentication failed — check your credentials in the Pluggy dashboard"
 ```
 
-The API key lives in `$PLUGGY_API_KEY` for the session — do not display or copy it to the chat.
+A API key vive em `$PLUGGY_API_KEY` — não exibir nem copiar para o chat.
 
-### Step 2 — Fetch all connected items
+### Step 2 — Buscar todos os itens conectados
 
 ```bash
 curl -s https://api.pluggy.ai/items \
   -H "X-API-KEY: ${PLUGGY_API_KEY}"
 ```
 
-Extract all `results[].id` values (item IDs) and map `id → connector.name` for institution lookup.
+Extrair todos `results[].id` e mapear `id → connector.name` para lookup de instituição.
 
-**Pagination:** compare `total` vs `results.length`. If `total > results.length`, fetch additional pages (`?page=2`, `?page=3`, …) until all items are collected.
+**Paginação:** comparar `total` vs `results.length`. Se `total > results.length`, buscar páginas adicionais (`?page=2`, `?page=3`, …).
 
-### Step 3 — Fetch investments per item
+### Step 3 — Buscar investimentos por item
 
-For each `itemId`:
+Para cada `itemId`:
 
 ```bash
 curl -s "https://api.pluggy.ai/investments?itemId=ITEM_ID_HERE" \
   -H "X-API-KEY: ${PLUGGY_API_KEY}"
 ```
 
-Consolidate all `results` arrays from all items into one list. Carry the institution name from the item map.
+Consolidar todos os `results` em uma lista. Carregar o nome da instituição do mapa de itens.
 
-**Pagination:** same as Step 2 — check `total` vs `results.length` per item and fetch all pages before moving on.
+**Paginação:** mesma lógica do Step 2.
 
-### Step 4 — Normalize to report model
+### Step 4 — Normalizar para o modelo do relatório
 
-Convert each investment object to:
+Converter cada investimento para:
+
 ```json
 {
   "id": "<results[].id>",
@@ -111,102 +120,27 @@ Convert each investment object to:
 }
 ```
 
-Write the normalized list to `/tmp/pluggy_investments.json` and restrict permissions immediately:
+Escrever para `/tmp/pluggy_investments.json` e restringir permissões:
 
 ```bash
 chmod 600 /tmp/pluggy_investments.json
 ```
 
-### Step 5 — Compute historical diff
+Após o Step 4, seguir para o workflow selecionado no routing acima.
+</shared_process>
 
-Compare the current portfolio against the previous snapshot to populate the evolution chart and per-asset delta columns in the HTML report. On first run this creates the baseline; on subsequent runs it computes what changed since last time.
-
-```bash
-if python3 "$SKILL_DIR/scripts/snapshot_diff.py" \
-     /tmp/pluggy_investments.json \
-     /tmp/pluggy_diff.json; then
-  chmod 600 /tmp/pluggy_diff.json
-  DIFF_FLAG="--diff /tmp/pluggy_diff.json"
-  echo "✓ Diff computed"
-else
-  DIFF_FLAG=""
-  echo "⚠ snapshot_diff failed — report will have no evolution data"
-fi
-```
-
-### Step 6 — Display Markdown summary in terminal
-
-Output exactly this format (fill in real values):
-
-```
-## Resumo de Investimentos
-
-| Métrica | Valor |
+<error_handling>
+| Erro | Ação |
 |---|---|
-| Total Investido | R$ X.XXX,XX |
-| Valor Atual | R$ X.XXX,XX |
-| Rendimento Total | R$ X.XXX,XX (X,XX%) |
-| Número de Ativos | XX |
+| `POST /auth` retorna 403 | "Credenciais inválidas. Verifique Client ID e Client Secret no dashboard Pluggy." |
+| `GET /items` retorna lista vazia | "Nenhuma conta conectada. Conecte pelo menos uma conta no dashboard pluggy.ai." |
+| Nenhum investimento em qualquer item | Mostrar sumário com zeros, gerar HTML com mensagem de estado vazio |
+| `python` não encontrado | "Python 3 não encontrado. Instale Python 3.8+ ou tente com `python3`." — tentar com `python3` |
+| `generate_report.py` falha | Mostrar erro do Python, verificar formato JSON de `/tmp/pluggy_investments.json` |
+| `snapshot_diff.py` falha | Logar erro, setar `DIFF_FLAG=""` e continuar — colunas de delta mostram "—" |
+</error_handling>
 
-### Por Tipo de Ativo
-| Tipo | Valor Atual | % da Carteira |
-|---|---|---|
-| Renda Fixa | R$ X.XXX,XX | XX,X% |
-| Ações | R$ X.XXX,XX | XX,X% |
-...
-```
-
-Use these type labels when grouping: `FIXED_INCOME` → Renda Fixa, `EQUITY`/`STOCK` → Ações, `FUND`/`MUTUAL_FUND` → Fundos, `ETF` → ETF, `TREASURY` → Tesouro Direto, `REAL_ESTATE` → FIIs, anything else → Outros.
-
-If `$SKILL_DIR/tmp/allocation_targets.json` exists, read it and append an allocation analysis section. Compute deviation as `actual% - target%`. Only show a recommendation when `|deviation| >= 2%`. Imbalance = category with the largest absolute deviation.
-
-```
-### Análise de Alocação
-| Categoria | Meta | Atual | Desvio |
-|---|---|---|---|
-| Renda Fixa | 70% | 76% | +6% |
-| ETF | 15% | 8% | -7% |
-| Fundos | 5% | 4% | -1% |
-
-**Recomendações:**
-- ↑ Comprar ETF (7% abaixo da meta)
-- ↓ Reduzir Renda Fixa (6% acima da meta)
-
-⚠ Carteira desbalanceada em 7% — maior desvio: ETF (-7%)
-```
-
-### Step 7 — Generate HTML report
-
-The report is saved as `relatorio.html` in the current working directory. Tell the user the full path so they can find it:
-
-```bash
-python3 "$SKILL_DIR/scripts/generate_report.py" \
-  /tmp/pluggy_investments.json \
-  relatorio.html \
-  $DIFF_FLAG \
-&& echo "Relatório salvo em: $(pwd)/relatorio.html"
-```
-
-### Step 8 — Open in browser
-
-```bash
-open relatorio.html        # macOS
-xdg-open relatorio.html    # Linux
-start relatorio.html       # Windows
-```
-
-## Error Handling
-
-| Error | Action |
-|---|---|
-| `POST /auth` returns 403 | "Invalid credentials. Check your Client ID and Client Secret in the Pluggy dashboard." |
-| `GET /items` returns empty list | "No connected accounts. Connect at least one account in the Pluggy dashboard at pluggy.ai." |
-| No investments in any item | Show summary with zeros, still generate HTML with empty-state message |
-| `python` not found | "Python 3 not found. Install Python 3.8+ or retry with `python3`." — retry with `python3` |
-| `generate_report.py` fails | Show the Python error to the user, check JSON format of `/tmp/pluggy_investments.json` |
-| `snapshot_diff.py` fails | Log the error, set `DIFF_FLAG=""` and continue — delta columns will show "—" |
-
-## PDF Export
-
-Tell the user:
-> "To save as PDF: in the browser, press **Ctrl+P** (or Cmd+P on Mac) → **Save as PDF**. The layout is already formatted for A4."
+<pdf_export>
+Informe o usuário:
+> "Para salvar como PDF: no navegador, pressione **Ctrl+P** (ou Cmd+P no Mac) → **Save as PDF**. O layout já está formatado para A4."
+</pdf_export>

@@ -13,6 +13,7 @@
     "skills/*/SKILL.md",
     "skills/*/scripts/**",
     "skills/*/references/**",
+    "skills/*/workflows/**",
     "skills/*/styles.json",
     "!**/__pycache__/**",
     "!**/*.pyc",
