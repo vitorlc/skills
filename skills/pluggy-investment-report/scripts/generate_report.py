@@ -95,6 +95,26 @@ def load_all_snapshots() -> list[dict]:
     return result[1:]  # [0] is the snapshot just saved for the current run
 
 
+def load_snapshots_series_full() -> list[dict]:
+    """Returns all snapshots oldest-first as {timestamp, label, value} for JS line chart rebuild."""
+    snap_dir = Path(__file__).resolve().parent.parent / "tmp" / "snapshots"
+    if not snap_dir.exists():
+        return []
+    result = []
+    for f in sorted(snap_dir.glob("*.json")):
+        try:
+            d = json.loads(f.read_text())
+            dt = datetime.fromisoformat(d["timestamp"])
+            result.append({
+                "timestamp": d["timestamp"],
+                "label": dt.strftime("%d/%m %H:%M"),
+                "value": round(d["totals"]["current"], 2),
+            })
+        except (KeyError, ValueError):
+            continue
+    return result
+
+
 def load_diff(path: str | None) -> dict | None:
     if not path:
         return None
@@ -297,10 +317,14 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
 
     type_labels_js = json.dumps(list(type_totals.keys()))
     type_values_js = json.dumps([round(v, 2) for v in type_totals.values()])
+    total_value_js = json.dumps(round(total_current, 2))
 
     snap_labels, snap_values = load_snapshots_series()
     snap_labels_js = json.dumps(snap_labels)
     snap_values_js = json.dumps(snap_values)
+
+    snap_series_full = load_snapshots_series_full()
+    snap_series_full_js = json.dumps(snap_series_full)
 
     history_snapshots = load_all_snapshots()
     history_js = json.dumps(history_snapshots)
@@ -552,6 +576,11 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
       color: #aab; font-size: 0.73rem; padding: 2px 8px; cursor: pointer;
     }}
     .history-row:hover .h-btn {{ border-color: #d1d5db; color: #6b7280; }}
+    .h-del {{
+      background: none; border: none; color: #e2e8f0;
+      font-size: 0.7rem; padding: 1px 3px; cursor: pointer; line-height: 1;
+    }}
+    .history-row:hover .h-del {{ color: #f87171; }}
     .history-detail {{
       background: #f9fafb; border-bottom: 1px solid #f0f0f0;
       padding: 10px 20px 14px; display: none; overflow-x: auto;
@@ -579,9 +608,9 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
         <div class="note">{n} {asset_word}</div>
       </div>
       <div class="card">
-        <div class="label">{_e(avanco_label)}</div>
-        <div class="value {delta_class}">{_e(delta_str)}</div>
-        <div class="note">{_e(avanco_note)}</div>
+        <div class="label" id="avanco-label">{_e(avanco_label)}</div>
+        <div class="value {delta_class}" id="avanco-value">{_e(delta_str)}</div>
+        <div class="note" id="avanco-note">{_e(avanco_note)}</div>
       </div>
     </div>
 
@@ -648,7 +677,7 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
       }}
     }});
 
-    new Chart(document.getElementById('lineChart'), {{
+    const lineChartInstance = new Chart(document.getElementById('lineChart'), {{
       type: 'line',
       data: {{
         labels: {snap_labels_js},
@@ -678,31 +707,55 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     }});
 
     // ── Histórico de relatórios ──────────────────────────────────────────────
-    const HISTORY = {history_js};
-    const HISTORY_COUNT = {history_count};
+    const TOTAL_VAL        = {total_value_js};
+    const HISTORY          = {history_js};
+    const SNAP_SERIES_FULL = {snap_series_full_js};
+    const DELETED_KEY      = 'pluggy_deleted_snapshots';
+
+    function fmtBRL(v) {{
+      const sign = v < 0 ? '-R$ ' : 'R$ ';
+      return sign + Math.abs(v).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
+    }}
+
+    function getDeleted() {{
+      try {{ return new Set(JSON.parse(localStorage.getItem(DELETED_KEY) || '[]')); }} catch(e) {{ return new Set(); }}
+    }}
+
+    function visibleHistory() {{
+      const deleted = getDeleted();
+      return HISTORY.filter(s => !deleted.has(s.timestamp));
+    }}
+
+    function updateToggleCount() {{
+      const btn = document.getElementById('historyToggle');
+      if (!btn) return;
+      const n    = visibleHistory().length;
+      const open = document.getElementById('history-panel')?.style.display !== 'none';
+      btn.textContent = 'relatórios anteriores (' + n + (open ? ') ▴' : ') ▾');
+      if (n === 0) document.getElementById('history-panel').style.display = 'none';
+    }}
 
     function toggleHistory() {{
       const panel = document.getElementById('history-panel');
-      const btn   = document.getElementById('historyToggle');
       if (!panel) return;
       const opening = panel.style.display === 'none';
       panel.style.display = opening ? 'block' : 'none';
-      btn.textContent = 'relatórios anteriores (' + HISTORY_COUNT + (opening ? ') ▴' : ') ▾');
+      updateToggleCount();
       if (opening && !document.getElementById('history-list').children.length) renderHistory();
     }}
 
     function renderHistory() {{
-      const list = document.getElementById('history-list');
-      if (!HISTORY.length) {{
+      const list    = document.getElementById('history-list');
+      const visible = visibleHistory();
+      if (!visible.length) {{
         list.innerHTML = '<div style="padding:14px 20px;color:#9ca3af;font-size:0.84rem;">Nenhum snapshot anterior encontrado.</div>';
         return;
       }}
       const TYPE_MAP = {{'FIXED_INCOME':'Renda Fixa','EQUITY':'Ações','ETF':'ETF','MUTUAL_FUND':'Fundos','FUND':'Fundos'}};
-      list.innerHTML = HISTORY.map((snap, i) => {{
+      list.innerHTML = visible.map((snap, i) => {{
         const dt  = new Date(snap.timestamp.replace('T',' '));
         const ts  = dt.toLocaleDateString('pt-BR') + ' às ' + dt.toLocaleTimeString('pt-BR',{{hour:'2-digit',minute:'2-digit'}});
-        const val = snap.totals.current;
-        const fv  = 'R$ ' + val.toLocaleString('pt-BR',{{minimumFractionDigits:2,maximumFractionDigits:2}});
+        const fv  = 'R$ ' + snap.totals.current.toLocaleString('pt-BR',{{minimumFractionDigits:2,maximumFractionDigits:2}});
         const n   = snap.investments ? snap.investments.length : '—';
         const rows = (snap.investments || [])
           .slice().sort((a,b) => ((TYPE_MAP[a.type]||a.type||'').localeCompare(TYPE_MAP[b.type]||b.type||'')) || (a.name||'').localeCompare(b.name||''))
@@ -712,15 +765,18 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
                    `<td style="text-align:right;font-variant-numeric:tabular-nums;">R$ ${{v}}</td></tr>`;
           }}).join('');
         const table = `<table><thead><tr>
-            <th style="text-align:left">Nome</th>
-            <th style="text-align:left">Tipo</th>
+            <th style="text-align:left">Nome</th><th style="text-align:left">Tipo</th>
             <th style="text-align:right">Valor</th>
           </tr></thead><tbody>${{rows}}</tbody></table>`;
-        return `<div class="history-row" onclick="toggleHistoryDetail(${{i}})">
+        const tsEsc = snap.timestamp.replace(/'/g, "\\'");
+        return `<div class="history-row" id="hrow-${{i}}" onclick="toggleHistoryDetail(${{i}})">
             <span class="h-ts">${{ts}}</span>
             <span class="h-val">${{fv}}</span>
             <span class="h-cnt">${{n}} ativos</span>
-            <button class="h-btn" id="hbtn-${{i}}">ver ▸</button>
+            <div style="display:flex;gap:2px;align-items:center;">
+              <button class="h-btn" id="hbtn-${{i}}">ver ▸</button>
+              <button class="h-del" onclick="deleteSnapshot(event,${{i}},'${{tsEsc}}')">✕</button>
+            </div>
           </div>
           <div class="history-detail" id="hdetail-${{i}}">${{table}}</div>`;
       }}).join('');
@@ -732,6 +788,54 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
       const opening = detail.style.display !== 'block';
       detail.style.display = opening ? 'block' : 'none';
       btn.textContent = opening ? 'fechar ▾' : 'ver ▸';
+    }}
+
+    function rebuildLineChart() {{
+      const deleted = getDeleted();
+      const visible = SNAP_SERIES_FULL.filter(s => !deleted.has(s.timestamp));
+      lineChartInstance.data.labels = visible.map(s => s.label);
+      lineChartInstance.data.datasets[0].data = visible.map(s => s.value);
+      lineChartInstance.update();
+    }}
+
+    function updateAvanco() {{
+      const lbl  = document.getElementById('avanco-label');
+      const val  = document.getElementById('avanco-value');
+      const note = document.getElementById('avanco-note');
+      if (!lbl || !val || !note) return;
+      const vis = visibleHistory();
+      if (!vis.length) {{
+        lbl.textContent  = 'Avanço';
+        val.textContent  = '—';
+        val.className    = 'value neutral';
+        note.textContent = 'primeira execução';
+        return;
+      }}
+      const prev  = vis[0];
+      const delta = TOTAL_VAL - prev.totals.current;
+      const dt    = new Date(prev.timestamp.replace('T', ' '));
+      const tsStr = dt.toLocaleDateString('pt-BR') + ' às ' +
+                    dt.toLocaleTimeString('pt-BR', {{hour:'2-digit', minute:'2-digit'}});
+      let dText, dCls;
+      if (delta > 0)      {{ dText = '↑ ' + fmtBRL(delta);            dCls = 'positive'; }}
+      else if (delta < 0) {{ dText = '↓ ' + fmtBRL(Math.abs(delta));  dCls = 'negative'; }}
+      else                {{ dText = '—';                               dCls = 'neutral';  }}
+      lbl.textContent  = 'Avanço desde ' + tsStr;
+      val.textContent  = dText;
+      val.className    = 'value ' + dCls;
+      note.textContent = 'desde ' + tsStr;
+    }}
+
+    function deleteSnapshot(e, i, ts) {{
+      e.stopPropagation();
+      const deleted = getDeleted();
+      deleted.add(ts);
+      localStorage.setItem(DELETED_KEY, JSON.stringify([...deleted]));
+      document.getElementById('hrow-'+i)?.remove();
+      document.getElementById('hdetail-'+i)?.remove();
+      updateToggleCount();
+      rebuildLineChart();
+      updateAvanco();
     }}
 
     // ── Ordenação da tabela de ativos ────────────────────────────────────────

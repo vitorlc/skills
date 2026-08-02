@@ -1,0 +1,32 @@
+{
+  "name": "@vitorlc/skills",
+  "version": "1.0.0",
+  "description": "Personal AI agent skills — install globally via npx",
+  "type": "module",
+  "bin": {
+    "skills": "./bin/skills.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "skills"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "skills",
+    "agent-skills",
+    "claude",
+    "opencode",
+    "ai"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vitorlc/skills.git"
+  }
+}
