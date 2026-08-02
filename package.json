@@ -9,9 +9,11 @@
   "files": [
     "bin",
     "src",
+    "scripts/skill_dir.sh",
     "skills/*/SKILL.md",
     "skills/*/scripts/**",
     "skills/*/references/**",
+    "skills/*/workflows/**",
     "skills/*/styles.json",
     "!**/__pycache__/**",
     "!**/*.pyc",
