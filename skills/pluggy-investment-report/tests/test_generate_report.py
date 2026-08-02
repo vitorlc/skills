@@ -123,13 +123,14 @@ class TestGenerateHTML(unittest.TestCase):
         html = self._html()
         self.assertIn("@media print", html)
 
-    def test_positive_return_class(self):
+    def test_unchanged_assets_show_neutral_delta_when_no_diff(self):
         html = self._html()
         self.assertIn('class="number neutral"', html)
 
-    def test_negative_return_class(self):
+    def test_chartjs_onerror_fallback_present(self):
         html = self._html()
-        self.assertIn('class="number neutral"', html)
+        self.assertIn('chart-error', html)
+        self.assertIn('onerror=', html)
 
     def test_empty_investments_generates_file(self):
         html = self._html([])
@@ -344,6 +345,12 @@ class TestAllocationHTML(unittest.TestCase):
         self.assertIn('data-category="Ações"', html)
         self.assertIn('data-category="ETF"', html)
         self.assertIn('data-category="Fundos"', html)
+
+    def test_inputs_include_categories_without_holdings(self):
+        html = self._html()
+        self.assertIn('data-category="FIIs"', html)
+        self.assertIn('data-category="Tesouro Direto"', html)
+        self.assertIn('data-category="Outros"', html)
 
     def test_targets_prefilled_when_provided(self):
         html = self._html(targets={"Renda Fixa": 70, "Ações": 10, "ETF": 15, "Fundos": 5})

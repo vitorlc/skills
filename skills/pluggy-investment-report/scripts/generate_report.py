@@ -58,6 +58,8 @@ def get_type_label(type_code: str) -> str:
         "OTHER": "Outros",
     }.get(type_code, type_code)
 
+ALL_TYPE_LABELS = {"Renda Fixa", "Ações", "Fundos", "ETF", "Tesouro Direto", "FIIs", "Outros"}
+
 
 def load_snapshots_series() -> tuple[list[str], list[float]]:
     """Returns (labels, values) from all saved snapshots, sorted by timestamp."""
@@ -189,8 +191,9 @@ def build_allocation_analysis(
 
 
 def _build_targets_panel_html(type_totals: dict, targets: dict) -> str:
+    all_cats = sorted(set(type_totals.keys()) | set(targets.keys()) | ALL_TYPE_LABELS)
     inputs_html = ""
-    for label in type_totals:
+    for label in all_cats:
         val = targets.get(label, "")
         inputs_html += (
             f'\n        <div class="target-row">'
@@ -367,7 +370,8 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
   <title>Relatório de Investimentos</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
           integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g"
-          crossorigin="anonymous"></script>
+          crossorigin="anonymous"
+          onerror="document.getElementById('chart-error').style.display='block'"></script>
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{
@@ -661,6 +665,10 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
       </div>
     </div>'''}
   </div>
+
+  <div id="chart-error" style="display:none;color:#dc2626;text-align:center;padding:20px;font-weight:600;">
+  ⚠ Erro ao carregar a biblioteca de gráficos. Recarregue a página ou verifique sua conexão.
+</div>
 
   <script>
     const COLORS = ['#3b82f6','#f59e0b','#8b5cf6','#10b981','#ef4444','#06b6d4','#f97316','#6366f1'];
