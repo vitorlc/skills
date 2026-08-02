@@ -36,5 +36,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/vitorlc/skills.git"
+  },
+  "devDependencies": {
+    "semantic-release": "^25.0.8"
   }
 }
