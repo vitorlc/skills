@@ -6,11 +6,6 @@
     ["@semantic-release/npm", {
       "npmPublish": true,
       "publishFlags": ["--provenance"]
-    }],
-    ["@semantic-release/github", {
-      "assets": [
-        {"path": "skills/*/SKILL.md", "label": "Skill documentation"}
-      ]
     }]
   ]
 }
