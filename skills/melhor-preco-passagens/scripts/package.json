@@ -1,0 +1,13 @@
+{
+  "name": "melhor-preco-passagens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Núcleo Google Flights (Playwright): compara preço R$ cash Azul x LATAM x GOL",
+  "type": "module",
+  "scripts": {
+    "search": "node search.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.62"
+  }
+}

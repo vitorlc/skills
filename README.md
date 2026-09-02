@@ -44,6 +44,7 @@ npx @vitorlc/skills which <skill>
 |-------|-------------|
 | `pluggy-investment-report` | Consolidated investment report from Pluggy-connected accounts |
 | `smiles-passagens` | Smiles/GOL round-trip miles search (calendar, SMILES_CLUB) |
+| `melhor-preco-passagens` | Cheapest round-trip fare in BRL comparing Azul × LATAM × GOL (Google Flights, Playwright) |
 
 ### Pluggy env vars
 
