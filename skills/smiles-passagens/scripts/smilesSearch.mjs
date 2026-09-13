@@ -1,24 +1,27 @@
 import { calendarEndpoint, httpGetJson } from "./client.mjs";
 
-const toISO = (ddmmyyyy) => {
-  const [d, m, y] = ddmmyyyy.split("/");
-  return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+const validationError = (message) => Object.assign(new Error(message), { code: "VALIDATION" });
+
+const toISO = (raw) => {
+  if (typeof raw !== "string" || !/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
+    throw validationError("Dates must be DD/MM/YYYY");
+  }
+  const [day, month, year] = raw.split("/").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (year < 1000 || date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    throw validationError(`Invalid calendar date: ${raw}`);
+  }
+  return date.toISOString().slice(0, 10);
 };
 
-const windowStart = (ddmmyyyy) => {
-  const [, m, y] = ddmmyyyy.split("/");
-  const month = Number(m);
-  const year = Number(y);
-  if (month === 1) return `${year - 1}-12-30`;
-  return `${year}-${String(month - 1).padStart(2, "0")}-30`;
+const windowStart = (raw) => {
+  const [year, month] = toISO(raw).split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, 0)).toISOString().slice(0, 10);
 };
 
-const windowEnd = (ddmmyyyy) => {
-  const [, m, y] = ddmmyyyy.split("/");
-  const month = Number(m);
-  const year = Number(y);
-  if (month === 12) return `${year + 1}-01-01`;
-  return `${year}-${String(month + 1).padStart(2, "0")}-01`;
+const windowEnd = (raw) => {
+  const [year, month] = toISO(raw).split("-").map(Number);
+  return new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
 };
 
 const priceForDate = (days, isoDate) => {
@@ -69,6 +72,10 @@ export async function searchSmiles({
 }) {
   const departureDate = toISO(departureRaw);
   const returnDate = toISO(returnRaw);
+  if (returnDate < departureDate) throw validationError("Return date must be on or after departure");
+  if (!Number.isInteger(Number(adults)) || Number(adults) < 1 || Number(adults) > 9) {
+    throw validationError("--adults must be an integer between 1 and 9");
+  }
   const params = new URLSearchParams({
     memberNumber: "",
     originAirportCode: origin,

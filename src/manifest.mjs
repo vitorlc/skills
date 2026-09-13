@@ -30,7 +30,7 @@ export function buildMeta({ name, targets }) {
 /** Prefer meta from canonical path; fall back to any target. */
 export function findInstalledMeta(name, targets) {
   const ordered = [
-    CANONICAL,
+    ...targets.filter((t) => t === CANONICAL),
     ...targets.filter((t) => t !== CANONICAL),
   ];
   for (const t of ordered) {
@@ -39,7 +39,7 @@ export function findInstalledMeta(name, targets) {
     // symlink may point to canonical which has meta
     if (exists(dir)) {
       const meta = readMeta(dir);
-      if (meta) return { target: t, dir, meta };
+      return { target: t, dir, meta };
     }
   }
   return null;

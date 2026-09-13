@@ -12,6 +12,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from html import escape as _e
+from report_model import TYPE_LABELS, get_type_label, investments_list, validate_targets, private_write
 
 TARGETS_PATH = str(Path(__file__).resolve().parent.parent / "tmp" / "allocation_targets.json")
 
@@ -44,19 +45,6 @@ def format_date(value: str | None) -> str:
     except (ValueError, AttributeError):
         return str(value)
 
-
-def get_type_label(type_code: str) -> str:
-    return {
-        "FIXED_INCOME": "Renda Fixa",
-        "EQUITY": "Ações",
-        "STOCK": "Ações",
-        "FUND": "Fundos",
-        "MUTUAL_FUND": "Fundos",
-        "ETF": "ETF",
-        "TREASURY": "Tesouro Direto",
-        "REAL_ESTATE": "FIIs",
-        "OTHER": "Outros",
-    }.get(type_code, type_code)
 
 ALL_TYPE_LABELS = {"Renda Fixa", "Ações", "Fundos", "ETF", "Tesouro Direto", "FIIs", "Outros"}
 
@@ -130,8 +118,8 @@ def load_diff(path: str | None) -> dict | None:
 def load_targets() -> dict:
     try:
         with open(TARGETS_PATH, encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return validate_targets(json.load(f))
+    except FileNotFoundError:
         return {}
 
 
@@ -156,7 +144,8 @@ def build_allocation_analysis(
         return None
 
     rows = []
-    for category, target_pct in targets.items():
+    for category in sorted(set(type_totals) | set(targets)):
+        target_pct = targets.get(category, 0)
         actual_value = type_totals.get(category, 0)
         actual_pct = round(actual_value / total_current * 100, 1)
         deviation = round(actual_pct - target_pct, 1)
@@ -289,7 +278,7 @@ def _build_analysis_html(analysis: dict | None) -> str:
 
 
 def generate_html(investments: list, output_path: str, diff: dict | None = None, targets: dict | None = None) -> str:
-    investments = [i for i in investments if (i.get("value") or 0) > 0]
+    investments = investments_list(investments)
 
     total_current = sum(i.get("value", 0) or 0 for i in investments)
 
@@ -318,7 +307,7 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     analysis_html = _build_analysis_html(analysis)
     allocation_breakdown_html = _build_allocation_breakdown_html(type_totals, total_current)
 
-    type_labels_js = json.dumps(list(type_totals.keys()))
+    type_labels_js = json.dumps(list(type_totals.keys())).replace("<", "\\u003c")
     type_values_js = json.dumps([round(v, 2) for v in type_totals.values()])
     total_value_js = json.dumps(round(total_current, 2))
 
@@ -330,7 +319,7 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     snap_series_full_js = json.dumps(snap_series_full)
 
     history_snapshots = load_all_snapshots()
-    history_js = json.dumps(history_snapshots)
+    history_js = json.dumps(history_snapshots).replace("<", "\\u003c")
     history_count = len(history_snapshots)
 
     delta_str, delta_class = format_delta(total_delta)
@@ -368,10 +357,7 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Relatório de Investimentos</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
-          integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g"
-          crossorigin="anonymous"
-          onerror="document.getElementById('chart-error').style.display='block'"></script>
+
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{
@@ -670,10 +656,19 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
   ⚠ Erro ao carregar a biblioteca de gráficos. Recarregue a página ou verifique sua conexão.
 </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
+          integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g"
+          crossorigin="anonymous"
+          onerror="document.getElementById('chart-error').style.display='block'"></script>
   <script>
+    function createChart(canvas, config) {{
+      if (typeof Chart === "function") return new Chart(canvas, config);
+      document.getElementById("chart-error").style.display = "block";
+      return {{data: config.data, update() {{}}}};
+    }}
     const COLORS = ['#3b82f6','#f59e0b','#8b5cf6','#10b981','#ef4444','#06b6d4','#f97316','#6366f1'];
 
-    new Chart(document.getElementById('pieChart'), {{
+    createChart(document.getElementById('pieChart'), {{
       type: 'doughnut',
       data: {{
         labels: {type_labels_js},
@@ -685,7 +680,7 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
       }}
     }});
 
-    const lineChartInstance = new Chart(document.getElementById('lineChart'), {{
+    const lineChartInstance = createChart(document.getElementById('lineChart'), {{
       type: 'line',
       data: {{
         labels: {snap_labels_js},
@@ -752,6 +747,10 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
       if (opening && !document.getElementById('history-list').children.length) renderHistory();
     }}
 
+    function escapeHtml(value) {{
+      return String(value).replace(/[&<>"']/g, c => ({{"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}}[c]));
+    }}
+
     function renderHistory() {{
       const list    = document.getElementById('history-list');
       const visible = visibleHistory();
@@ -759,7 +758,7 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
         list.innerHTML = '<div style="padding:14px 20px;color:#9ca3af;font-size:0.84rem;">Nenhum snapshot anterior encontrado.</div>';
         return;
       }}
-      const TYPE_MAP = {{'FIXED_INCOME':'Renda Fixa','EQUITY':'Ações','ETF':'ETF','MUTUAL_FUND':'Fundos','FUND':'Fundos'}};
+      const TYPE_MAP = {json.dumps(TYPE_LABELS)};
       list.innerHTML = visible.map((snap, i) => {{
         const dt  = new Date(snap.timestamp.replace('T',' '));
         const ts  = dt.toLocaleDateString('pt-BR') + ' às ' + dt.toLocaleTimeString('pt-BR',{{hour:'2-digit',minute:'2-digit'}});
@@ -769,7 +768,7 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
           .slice().sort((a,b) => ((TYPE_MAP[a.type]||a.type||'').localeCompare(TYPE_MAP[b.type]||b.type||'')) || (a.name||'').localeCompare(b.name||''))
           .map(inv => {{
             const v = (inv.value||0).toLocaleString('pt-BR',{{minimumFractionDigits:2,maximumFractionDigits:2}});
-            return `<tr><td>${{inv.name||'-'}}</td><td>${{TYPE_MAP[inv.type]||inv.type||'-'}}</td>`+
+            return `<tr><td>${{escapeHtml(inv.name||'-')}}</td><td>${{escapeHtml(TYPE_MAP[inv.type]||'Outros')}}</td>`+
                    `<td style="text-align:right;font-variant-numeric:tabular-nums;">R$ ${{v}}</td></tr>`;
           }}).join('');
         const table = `<table><thead><tr>
@@ -909,8 +908,7 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
 </body>
 </html>"""
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(html)
+    private_write(output_path, html)
 
     return output_path
 
@@ -947,8 +945,12 @@ if __name__ == "__main__":
         print(f"Erro: JSON inválido em {json_path}: {e}", file=sys.stderr)
         sys.exit(1)
 
-    investments = data if isinstance(data, list) else data.get("investments", [])
-    diff = load_diff(diff_path)
-    targets = load_targets()
-    result = generate_html(investments, output_path, diff, targets=targets)
+    try:
+        investments = investments_list(data)
+        diff = load_diff(diff_path)
+        targets = load_targets()
+        result = generate_html(investments, output_path, diff, targets=targets)
+    except (ValueError, OSError) as exc:
+        print(f"Erro no relatório: {exc}", file=sys.stderr)
+        sys.exit(1)
     print(f"Relatório gerado: {result}")

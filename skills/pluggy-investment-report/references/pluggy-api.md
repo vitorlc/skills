@@ -1,131 +1,62 @@
-# Pluggy API Reference
+# Contrato de coleta e relatório
 
-Base URL: `https://api.pluggy.ai`
+Python 3.10+, somente biblioteca padrão. A execução HTTP usa timeout de 30 segundos,
+sem repetição automática e sem seguir redirecionamentos. Erros não incluem corpos
+HTTP, credenciais ou tokens. A saída só é substituída após coleta completa.
 
-All requests (except `/auth`) require the header:
-```
-X-API-KEY: {apiKey}
-```
+## Endpoints
 
----
+- `POST /auth`: corpo `{clientId, clientSecret}` → `{apiKey}` mantida em memória.
+- `GET /v2/items`: `{results, next}`; `next` é uma query pronta, anexada ao mesmo
+  endpoint. Listagem opt-in. Alternativa: `--item-id ID`, consultando `GET /items/{id}`.
+- `GET /investments?itemId=...&page=...&pageSize=500`: `{results, total}`. Percorrer
+  até atingir `total`; páginas vazias prematuras, IDs repetidos e cursores repetidos
+  são erros. Não publicar resultados parciais.
 
-## 1. Authentication
+Fontes oficiais consultadas na revisão do contrato:
+[items](https://docs.pluggy.ai/reference/items-list-by-cursor),
+[formato de cursor](https://slack.pluggy.ai/en/reference/items/items-list-by-cursor),
+[investimentos](https://docs.pluggy.ai/reference/investments-list) e
+[campos](https://docs.pluggy.ai/docs/investments).
 
-**POST /auth**
+## Modelo normalizado
 
-Request:
-```json
-{
-  "clientId": "YOUR_CLIENT_ID",
-  "clientSecret": "YOUR_CLIENT_SECRET"
-}
-```
+Lista de objetos com campos:
 
-Response (200):
-```json
-{
-  "apiKey": "abc123..."
-}
-```
+| Campo | Origem / significado |
+|---|---|
+| `id`, `name` | Identificador e nome do investimento |
+| `institution` | Nome do connector da conexão |
+| `type` | Tipo; subtipos TREASURY e REAL_ESTATE_FUND viram TREASURY e REAL_ESTATE |
+| `value` | `balance`, saldo líquido atual, número finito obrigatório |
+| `amount` | `amountOriginal`, custo original, ou `null` se ausente |
+| `return_amount` | `amountProfit`, ou `balance - amountOriginal` se ambos conhecidos |
+| `return_rate` | Rendimento / custo original × 100 quando calculável; senão `null` |
+| `maturity_date` | `dueDate` ou `null` |
 
-Error (403): invalid credentials.
+`amount` da API é valor bruto atual, não custo original. `lastTwelveMonthsRate`
+representa outro período e não substitui a taxa calculada acima. Apenas BRL é aceito;
+moeda ausente segue o contexto BRL da skill, sem conversão implícita.
 
----
+Os leitores também aceitam `{investments: [...]}` para arquivos locais existentes.
+Validam estrutura, campos textuais e números finitos. Todos os registros recebidos,
+inclusive valores zero e negativos, participam do resumo, HTML e snapshots.
+Tipos desconhecidos são agrupados em Outros. Se algum custo/rendimento é desconhecido,
+o total correspondente fica `null` (exibido como “não informado”).
 
-## 2. List Connected Items (Accounts)
+## Arquivos e erros
 
-**GET /items**
+- `collect_investments.py OUTPUT [--item-id ID ...]`: `0` sucesso, `1` configuração,
+  dados ou arquivo, `2` API/rede. stdout informa quantidade e caminho, nunca o token.
+- `summary.py INPUT`: Markdown em stdout; `0` sucesso, `1` arquivo/dados inválidos.
+- `generate_report.py INPUT [OUTPUT] [--diff DIFF]`: HTML privado; `0` sucesso,
+  `1` arquivo/dados inválidos. Sem diff válido, não há deltas no relatório.
+- `snapshot_diff.py INPUT OUTPUT`: diff privado + snapshot; `0` sucesso,
+  `1` arquivo/dados inválidos, `2` argumentos incompletos.
 
-Response (200):
-```json
-{
-  "total": 2,
-  "results": [
-    {
-      "id": "item-uuid-1",
-      "status": "UPDATED",
-      "connector": {
-        "id": 201,
-        "name": "Nubank",
-        "type": "PERSONAL_BANK"
-      },
-      "updatedAt": "2026-05-19T10:00:00Z"
-    }
-  ]
-}
-```
-
-Collect all `results[].id` values — these are `itemId`s.
-
----
-
-## 3. Fetch Investments for an Item
-
-**GET /investments?itemId={itemId}**
-
-Response (200):
-```json
-{
-  "total": 3,
-  "results": [
-    {
-      "id": "inv-uuid-1",
-      "name": "Tesouro IPCA+ 2029",
-      "balance": 5430.50,
-      "amount": 5000.00,
-      "profits": 430.50,
-      "lastTwelveMonthsRate": 8.61,
-      "dueDate": "2029-05-15",
-      "type": "FIXED_INCOME",
-      "subtype": "LFT",
-      "issuer": "Tesouro Nacional",
-      "currencyCode": "BRL",
-      "date": "2023-01-10",
-      "quantity": 0.5
-    }
-  ]
-}
-```
-
-Repeat for each `itemId`. Concatenate all `results` arrays.
-
----
-
-## 4. Field Mapping to Report Model
-
-| Pluggy field | Report field | Notes |
-|---|---|---|
-| `name` | `name` | Asset name |
-| `connector.name` (from item) | `institution` | Bank/broker name — carry it when iterating |
-| `type` | `type` | FIXED_INCOME, STOCK, FUND, ETF, MUTUAL_FUND, REAL_ESTATE |
-| `amount` | `amount` | Original amount invested |
-| `balance` | `value` | Current market value |
-| `profits` | `return_amount` | Gross return in R$ (balance - amount if missing) |
-| `lastTwelveMonthsRate` | `return_rate` | Return % (calculate as profits/amount*100 if missing) |
-| `dueDate` | `maturity_date` | May be null for stocks/ETFs |
-
-**Institution lookup:** When iterating items, store a map `{itemId → connector.name}`. Use this when processing each investment.
-
----
-
-## 5. Sandbox Setup
-
-1. Go to https://pluggy.ai and create a free account
-2. In the dashboard, create an **App** — this gives you Client ID and Client Secret
-3. In sandbox mode, use the **Pluggy Connect Widget** or the API directly to connect a test account:
-   - `POST /connect-token` with your `apiKey` to get a `connectToken`
-   - Use the sandbox connector ID `201` (Nubank sandbox) for test data
-4. Sandbox investments are pre-populated with realistic fake data
-
----
-
-## 6. Pagination
-
-Both `/items` and `/investments` support `page` and `pageSize` query params.
-Default `pageSize` is 20. Check `total` vs `results.length` — if `total > pageSize`, fetch additional pages:
-
-```
-GET /investments?itemId={id}&page=2&pageSize=20
-```
-
-For most personal accounts, a single page is sufficient.
+O diff contém `first_run`, timestamps, `totals` (`prev`, `curr`, `delta`) e `assets`
+(`changed`, `new`, `removed`). Delta entre métricas desconhecidas é `null`.
+Snapshots anteriores permanecem legíveis; métricas antigas de custo/rendimento podem
+seguir o mapeamento anterior, portanto não representam uma série recalculada.
+Metas inválidas interrompem o relatório. Categorias da carteira omitidas nas metas
+entram na análise com alvo zero; desvios de pelo menos 2 pontos geram sugestões.

@@ -17,7 +17,7 @@ Installs into:
 | Agent Skills | `~/.agents/skills/<name>/` |
 | OpenCode | `~/.config/opencode/skills/<name>/` |
 
-By default the skill is copied to `~/.claude/skills` and symlinked into the other two locations.
+By default a new skill is copied to `~/.claude/skills` and symlinked into the other two locations. Existing independent copies stay independent. Updating a symlink target on its own detaches it into a copy, retaining its state, so unselected hosts are not modified.
 
 ## Commands
 
@@ -53,7 +53,7 @@ export PLUGGY_CLIENT_ID="..."
 export PLUGGY_CLIENT_SECRET="..."
 ```
 
-Never commit credentials. Local state under the installed skill (`tmp/`, `data/`) is preserved across updates.
+Never commit credentials. Local state under each installed skill (`tmp/`, `data/`, `.cache/`, root `.env` and root HTML reports) is preserved across updates, including independent copies. `.env` is not loaded automatically. Uninstall removes that target and its local state; it refuses to remove a directory still shared by an unselected host. Dependencies in `scripts/node_modules` survive updates unless the dependency lockfile changes; then run the skill setup again.
 
 ### Smiles search (no secrets required)
 
@@ -64,6 +64,17 @@ node ~/.claude/skills/smiles-passagens/scripts/search.mjs \
 
 Optional: `CALENDAR_API_URL` overrides the calendar endpoint. Airport DB covers GOL domestic + international destinations.
 
+## Runtime requirements
+
+- Installer and Smiles: Node.js 18+.
+- Google Flights: Node.js 20+, Playwright dependencies and Chromium installed separately.
+- Pluggy: Python 3.10+, exported credentials; no third-party Python packages.
+- Hermes paths/cron are optional host-specific usage, not installer targets.
+
+`install` skips intact installations matching the packaged source; `--force` reinstalls.
+`update` always refreshes selected installed skills. Package version status compares
+to the currently running npm package; it does not query the registry.
+
 ## Develop
 
 ```bash
@@ -71,6 +82,12 @@ node bin/skills.mjs list
 node bin/skills.mjs install pluggy-investment-report --dry-run
 node bin/skills.mjs install pluggy-investment-report
 ```
+
+Run offline regression tests with `npm test`. Tests use temporary installations,
+synthetic API responses and monitor files; they do not access personal accounts.
+PRs run the same tests; publishing only runs for pushes to `main`.
+After installing the Google Flights dependencies and Chromium, run `npm run test:browser`
+for offline DOM/report checks. Set `SKILLS_CHROMIUM_PATH` to use a system Chromium.
 
 Add a new skill as `skills/<name>/SKILL.md` (plus optional `scripts/`, `references/`).
 

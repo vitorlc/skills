@@ -27,10 +27,12 @@ export function resolveTargets(spec = "all") {
       );
     }
   }
-  return parts;
+  if (!parts.length) throw new Error("Select at least one target");
+  return [...new Set(parts)];
 }
 
 export function skillPath(target, name) {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name || "")) throw new Error("Invalid skill name");
   return path.join(BASES[target], name);
 }
 
