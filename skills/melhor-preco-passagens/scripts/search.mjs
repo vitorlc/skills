@@ -8,21 +8,22 @@
 //
 // Exit codes: 0 ok · 1 args inválidos · 2 bloqueio/captcha/rede · 3 datas não validadas/sem resultados
 //
-// Contrato de saída (JSON): DESIGN.md seção 3.
-import { chromium } from 'playwright';
+// Contrato de saída (JSON): ../references/contracts.md.
+
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeAirline, parseBRL, AIRLINE_LABELS } from './lib/airlines.js';
 import { resolveAirport } from './lib/airports.js';
+import { readPassengerCounts } from './lib/ui.js';
+import { parseArgs, selectAirport, updateMonitor, errorCode } from './lib/contracts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJ_ROOT = path.resolve(__dirname, '..');
 const PROFILE_DIR = path.join(PROJ_ROOT, '.cache', 'gf-profile');
 const DEBUG_DIR = path.join(PROJ_ROOT, '.cache', 'debug');
 const LAST_RUN_FILE = path.join(PROJ_ROOT, '.cache', 'last-search.json');
-mkdirSync(PROFILE_DIR, { recursive: true });
-mkdirSync(DEBUG_DIR, { recursive: true });
+
 
 const GF_URL = 'https://www.google.com/travel/flights?hl=pt-BR&gl=BR&curr=BRL';
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36';
@@ -76,24 +77,6 @@ function isoLocalNow() {
   const offH = pad(Math.floor(Math.abs(off) / 60));
   const offM = pad(Math.abs(off) % 60);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${sign}${offH}:${offM}`;
-}
-
-function parseArgs(argv) {
-  const args = {};
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a.startsWith('--')) {
-      const key = a.slice(2);
-      const next = argv[i + 1];
-      if (next === undefined || next.startsWith('--')) {
-        args[key] = true; // flag
-      } else {
-        args[key] = next;
-        i++;
-      }
-    }
-  }
-  return args;
 }
 
 async function saveScreenshot(page, name) {
@@ -161,41 +144,18 @@ async function fillAirportField(page, labelRe, resolved, label) {
   const sel = `input[aria-label^="${labelRe}"]`;
   await typeQuery(page, sel, resolved.query);
 
-  let opts = await dropdownOptions(page);
-  if (!opts.length) {
-    // Sem dropdown (autocomplete inline): Enter aceita a 1ª sugestão.
-    await page.keyboard.press('Enter');
-    await sleep(2500);
-  } else {
-    let target = null;
-    if (resolved.expect) {
-      target = opts.find((o) => resolved.expect.has(o.code)) || null;
-    }
-    if (!target) target = opts[0];
-    // Clica no centro do código IATA (a linha inteira é clicável)
-    const box = await page.evaluate(({ code }) => {
-      for (const codeEl of document.querySelectorAll('div.P1pPOe')) {
-        if ((codeEl.innerText || '').trim().toUpperCase() === code && (codeEl.offsetWidth || codeEl.offsetHeight)) {
-          const r = codeEl.getBoundingClientRect();
-          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-        }
-      }
-      return null;
-    }, { code: target.code });
-    if (box) {
-      await page.mouse.click(box.x, box.y);
-    } else {
-      await page.keyboard.press('Enter');
-    }
-    await sleep(3000);
-    // confirma o commit: o popup de sugestões deve ter fechado
-    opts = await dropdownOptions(page);
-    if (opts.length) {
-      err(`popup de sugestões ainda aberto para ${label}; tentando Enter como fallback`);
-      await page.keyboard.press('Enter');
-      await sleep(2500);
-      opts = await dropdownOptions(page);
-    }
+  const opts = await dropdownOptions(page);
+  const target = selectAirport(opts, resolved.expect);
+  if (!target) {
+    err(`aeroporto esperado não encontrado para ${label}; selecione um IATA doméstico conhecido`);
+    return null;
+  }
+  const code = page.locator('div.P1pPOe').filter({ visible: true }).filter({ hasText: new RegExp(`^${target.code}$`) }).first();
+  await code.click();
+  await sleep(1500);
+  if ((await dropdownOptions(page)).length) {
+    err(`seleção de ${label} não confirmada`);
+    return null;
   }
 
   const value = await page.locator(sel).filter({ visible: true }).first().inputValue().catch(() => '');
@@ -203,7 +163,7 @@ async function fillAirportField(page, labelRe, resolved, label) {
     err(`campo "${label}" ficou vazio após seleção (query="${resolved.query}")`);
     return false;
   }
-  return true;
+  return target.code;
 }
 
 // Seleciona um dia no calendário aberto. monthRe ex.: "de outubro de 2026".
@@ -254,12 +214,18 @@ function parseCardText(text) {
 
 // ---------------------------------------------------------------- main
 async function main() {
-  const argv = parseArgs(process.argv.slice(2));
+  let argv;
+  try { argv = parseArgs(process.argv.slice(2)); }
+  catch (e) { err(e.message); process.exitCode = 1; return; }
+  if (argv.help) {
+    console.log('Uso: --origin IATA --destination IATA --departure DD/MM/AAAA --return DD/MM/AAAA [--adults 1..9] [--json] [--state-file PATH]');
+    return;
+  }
   const originArg = argv.origin;
   const destArg = argv.destination;
   const depArg = argv.departure;
   const retArg = argv.return;
-  const adultsArg = argv.adults ? parseInt(argv.adults, 10) : 1;
+  const adultsArg = argv.adults === undefined ? 1 : Number(argv.adults);
   const wantJson = !!argv.json;
   const stateFile = typeof argv['state-file'] === 'string' ? argv['state-file'] : null;
   const debug = !!argv.debug;
@@ -284,11 +250,13 @@ async function main() {
   if (depDate < today) { err('data de partida no passado'); process.exit(1); }
   if (retDate < depDate) { err('data de volta antes da partida'); process.exit(1); }
   const dayDiff = Math.round((retDate - depDate) / 86400000);
-  if (dayDiff > 16) { err('Google Flights não suporta viagens com mais de 16 dias (use datas próximas)'); process.exit(1); }
+  if (dayDiff > 16) { err('Esta implementação aceita viagens de até 16 dias'); process.exit(1); }
 
   const origin = resolveAirport(originArg);
   const dest = resolveAirport(destArg);
-  if (!origin || !dest) { err('origem/destino inválidos'); process.exit(1); }
+  if (!origin?.expect || !dest?.expect) { err('use aeroportos domésticos da tabela local; origem/destino não resolvidos'); process.exit(1); }
+  mkdirSync(PROFILE_DIR, { recursive: true });
+  mkdirSync(DEBUG_DIR, { recursive: true });
 
   // ---- cooldown entre execuções
   if (existsSync(LAST_RUN_FILE)) {
@@ -304,13 +272,15 @@ async function main() {
 
   let ctx = null;
   try {
+    const { chromium } = await import('playwright').catch(() => { throw Object.assign(new Error('Instale as dependências em scripts/ com npm ci'), { exitCode: 1 }); });
     ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
       headless: true,
       userAgent: UA,
       locale: 'pt-BR',
       viewport: { width: 1440, height: 900 },
-      args: ['--disable-blink-features=AutomationControlled', '--lang=pt-BR', '--no-sandbox'],
-    });
+      args: ['--lang=pt-BR'],
+      chromiumSandbox: true,
+    }).catch(() => { throw Object.assign(new Error("Falha ao iniciar Chromium; verifique a instalação do navegador e o suporte ao sandbox"), { exitCode: 1 }); });
     const page = ctx.pages()[0] ?? (await ctx.newPage());
     if (debug) {
       page.on('console', (m) => { if (m.type() === 'error') err(`[console] ${m.text().slice(0, 200)}`); });
@@ -330,25 +300,35 @@ async function main() {
 
     // ---- preenche origem e destino
     const okOrigin = await fillAirportField(page, 'De onde?', origin, 'origem');
-    if (!okOrigin) { err('não foi possível preencher a origem — verifique o nome/código'); process.exitCode = 1; return; }
+    if (!okOrigin) { err('não foi possível preencher a origem — verifique o nome/código'); process.exitCode = 3; return; }
     const okDest = await fillAirportField(page, 'Para onde?', dest, 'destino');
-    if (!okDest) { err('não foi possível preencher o destino — verifique o nome/código'); process.exitCode = 1; return; }
+    if (!okDest) { err('não foi possível preencher o destino — verifique o nome/código'); process.exitCode = 3; return; }
 
-    // ---- passageiros (quando != 1)
-    if (adultsArg > 1) {
-      const paxBtn = page.locator('button[aria-label*="passageiro"], button:has-text("passageiro")').filter({ visible: true }).first();
-      if (await paxBtn.isVisible().catch(() => false)) {
-        await paxBtn.click();
-        await sleep(1500);
-        for (let i = 1; i < adultsArg; i++) {
-          const add = page.locator('button[aria-label="Adicionar adulto"]').filter({ visible: true }).first();
-          if (await add.isVisible().catch(() => false)) await add.click();
-          await sleep(400);
-        }
-        await page.locator('button:has-text("Concluído")').filter({ visible: true }).first().click().catch(() => {});
-        await sleep(1500);
-      }
+    // A persistent profile may carry another trip/cabin/passenger selection.
+    const trip = page.getByRole('combobox').filter({ hasText: /^Ida e volta$/ }).first();
+    const cabin = page.getByRole('combobox').filter({ hasText: /^Econômica$/ }).first();
+    if (!(await trip.isVisible()) || !(await cabin.isVisible())) {
+      err('ida e volta/econômica não confirmadas no formulário'); process.exitCode = 3; return;
     }
+    const paxBtn = page.locator('[aria-label*="passageiro"], [aria-label*="Passageiro"]').filter({ visible: true }).first();
+    if (!(await paxBtn.isVisible())) {
+      err('controle de passageiros não encontrado'); process.exitCode = 3; return;
+    }
+    await paxBtn.click();
+    await sleep(500);
+    const passengerCounts = () => page.evaluate(readPassengerCounts);
+    let counts = await passengerCounts();
+    if (!Number.isInteger(counts.Adultos) || counts.Crianças !== 0 || counts['Bebês no assento'] !== 0 || counts['Bebês no colo'] !== 0) {
+      err('composição de passageiros não confirmada; somente adultos são suportados'); process.exitCode = 3; return;
+    }
+    const delta = adultsArg - counts.Adultos;
+    const change = page.getByRole('button', { name: delta > 0 ? /Adicionar adulto/i : /Remover adulto/i }).first();
+    for (let i = 0; i < Math.abs(delta); i++) await change.click();
+    counts = await passengerCounts();
+    if (counts.Adultos !== adultsArg) {
+      err('quantidade de adultos não confirmada'); process.exitCode = 3; return;
+    }
+    await page.getByRole('button', { name: 'Concluído', exact: true }).filter({ visible: true }).first().click();
 
     // ---- datas no formulário
     const partidaInput = page.locator('input[aria-label="Partida"]').filter({ visible: true }).first();
@@ -491,7 +471,7 @@ async function main() {
 
     // companhias sem resultados ganham nota
     for (const [k, v] of Object.entries(airlines)) {
-      if (v.count === 0) v.note = 'sem voos na rota/datas';
+      if (v.count === 0) v.note = 'nenhum resultado encontrado nesta consulta';
     }
 
     let best = null;
@@ -500,9 +480,12 @@ async function main() {
     }
 
     const out = {
+      schema_version: 1,
+      adults: adultsArg,
+      cabin: "ECONOMY",
       route: {
-        origin: originArg,
-        destination: destArg,
+        origin: okOrigin,
+        destination: okDest,
         departure: `${dep.year}-${String(dep.month).padStart(2, '0')}-${String(dep.day).padStart(2, '0')}`,
         return: `${ret.year}-${String(ret.month).padStart(2, '0')}-${String(ret.day).padStart(2, '0')}`,
       },
@@ -523,31 +506,23 @@ async function main() {
       }).join('\n');
       const bestTxt = best ? `**Melhor valor: ${AIRLINE_LABELS[best.airline]} — R$ ${best.price.toLocaleString('pt-BR')}**` : 'sem voos na rota';
       const rota = `${out.route.origin} → ${out.route.destination}`;
-      return `## ${rota} — ${out.route.departure} a ${out.route.return}\nAtualizado: ${out.fetched_at}\n\n| Companhia | Menor preço (ida e volta) |\n|---|---|\n${rows}\n\n${bestTxt}\n\n_Confirme o preço no site da companhia antes de comprar._`;
+      return `## ${rota} — ${out.route.departure} a ${out.route.return}\nAdultos: ${out.adults} · Econômica\nAtualizado: ${out.fetched_at}\n\n| Companhia | Menor preço (ida e volta) |\n|---|---|\n${rows}\n\n${bestTxt}\n\n_Confirme o preço no site da companhia antes de comprar._`;
     };
 
     if (wantJson) {
       process.stdout.write(JSON.stringify(out, null, 2) + '\n');
     } else if (stateFile) {
-      // watchdog: imprime só na 1ª execução ou quando o melhor valor MUDOU
-      let prev = null;
-      if (existsSync(stateFile)) {
-        try { prev = JSON.parse(readFileSync(stateFile, 'utf8')); } catch { prev = null; } // state corrompido = 1ª vez
-      }
-      const state = { best_airline: best ? best.airline : null, best_price: best ? best.price : null, dates: `${out.route.departure}..${out.route.return}` };
-      writeFileSync(stateFile, JSON.stringify(state, null, 2));
-      const changed = !prev || prev.best_airline !== state.best_airline || prev.best_price !== state.best_price || prev.dates !== state.dates;
-      if (changed) process.stdout.write(rankingMd() + '\n');
+      if (updateMonitor(stateFile, out)) process.stdout.write(rankingMd() + '\n');
     } else {
       process.stdout.write(rankingMd() + '\n');
     }
     process.exitCode = 0;
   } catch (e) {
     err(`erro inesperado: ${e && e.stack ? e.stack.slice(0, 800) : e}`);
-    process.exitCode = 1;
+    process.exitCode = errorCode(e);
   } finally {
     if (ctx) await ctx.close().catch(() => {});
   }
 }
 
-main();
+main().catch(e => { err(e.message); process.exitCode = 1; });

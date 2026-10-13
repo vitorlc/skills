@@ -1,5 +1,5 @@
 // lib/airlines.js — normalização de companhias (Azul/LATAM/GOL) + parse de preço R$
-// Contrato de saída (DESIGN.md seção 3): chaves AZUL | LATAM | GOL.
+// Contrato de saída (references/contracts.md): chaves AZUL | LATAM | GOL.
 
 export const TARGET_AIRLINES = {
   AZUL: { label: 'Azul', patterns: [/azul/i] },

@@ -1,163 +1,75 @@
 ---
 name: melhor-preco-passagens
-description: "Busca preço de passagem aérea doméstica em R$ (cash) comparando Azul × LATAM × GOL no Google Flights (Playwright headless). Use quando o usuário pedir preço de passagem azul latam gol, comparar passagem, melhor preço de voo, quanto está o voo, ou consulta com origem destino e datas. Triggers: preço de passagem, passagem azul, passagem latam, passagem gol, comparar voo, melhor preço, voo mais barato, origem destino datas."
+description: Compara preços em reais de ida e volta doméstica entre Azul, LATAM e GOL no Google Flights, com opção de monitoramento. Use para cotação cash; para milhas Smiles, use smiles-passagens.
 ---
 
-# Melhor preço — passagens aéreas domésticas (R$ cash: Azul × LATAM × GOL)
+# Passagens domésticas em reais
 
-Consulta pontual ou monitor (watchdog) do menor preço **em reais (cash)** de ida+volta
-doméstico BR entre **Azul**, **LATAM** e **GOL**, via **Google Flights** (agregador).
-Uma busca por execução; modo monitor imprime relatório só quando o melhor valor muda
-(stdout vazio = silêncio, padrão dos crons no_agent foz/bps). Não cobre milhas (ver
-skill `smiles-passagens`), internacional nem cabines além de econômica.
+Busca única, econômica, ida e volta, somente adultos. Usa Google Flights como fonte;
+não faz compra. Se a moeda do pedido estiver ambígua, esclarecer reais ou milhas.
 
-## Prerequisites
+## Preparação
 
-- Node.js ≥ 18 (testado em v22).
-- `playwright` instalado no dir da skill (ver Step 0) — **browsers não precisam baixar**:
-  já estão em `~/.cache/ms-playwright` (chromium-1234 p/ playwright ^1.62). Se faltar:
-  `npx playwright install chromium`.
-- Rede liberada para `google.com/travel/flights`.
-- Execuções consecutivas respeitam cooldown de 30s gravado em `.cache/last-search.json`
-  do dir da skill (o script espera sozinho; não rodar em rajada).
-
-## Step 0 — Locate skill directory
+Node.js ≥20, Playwright e Chromium. Não presumir dependências ou navegador instalados.
 
 ```bash
 SKILL_DIR=""
-for d in \
-  "$HOME/.hermes/skills/travel/melhor-preco-passagens" \
-  "$HOME/.hermes/skills/melhor-preco-passagens" \
-  "$HOME/.claude/skills/melhor-preco-passagens" \
-  "$HOME/.config/opencode/skills/melhor-preco-passagens" \
-  "$HOME/.agents/skills/melhor-preco-passagens"; do
-  if [ -f "$d/scripts/search.mjs" ]; then
-    SKILL_DIR="$d"
-    break
-  fi
+for d in "$HOME/.hermes/skills/travel/melhor-preco-passagens" "$HOME/.hermes/skills/melhor-preco-passagens" "$HOME/.claude/skills/melhor-preco-passagens" "$HOME/.config/opencode/skills/melhor-preco-passagens" "$HOME/.agents/skills/melhor-preco-passagens"; do
+  if [ -f "$d/scripts/search.mjs" ]; then SKILL_DIR="$d"; break; fi
 done
-[ -n "$SKILL_DIR" ] && echo "OK: $SKILL_DIR" || echo "skill nao instalada"
+[ -n "$SKILL_DIR" ] || { echo 'Instale: npx @vitorlc/skills melhor-preco-passagens'; exit 1; }
 ```
 
-Se `$SKILL_DIR/scripts/node_modules` não existir (instalação por cópia):
+No repositório, usar diretamente a pasta desta skill. Se faltarem dependências,
+executar `npm ci --no-audit --no-fund` em `$SKILL_DIR/scripts`; se faltar o navegador,
+executar `npx playwright install chromium` no mesmo diretório. Chromium utiliza seu
+sandbox; falha de inicialização deve ser resolvida no ambiente, não desabilitando-o.
+
+## Parâmetros e execução
+
+Origem/destino: IATA doméstico conhecido, cidade ou UF da tabela local. Para cidades
+com vários aeroportos, respeitar IATA explícito; se apenas cidade/UF foi pedida, o
+script pode selecionar um dos aeroportos mapeados e retorna o código selecionado.
+Texto fora da tabela deve ser esclarecido, sem aceitar a primeira sugestão do Google.
+
+Datas: `DD/MM/AAAA` ou ISO. Ida não pode estar no passado, volta não pode antecedê-la.
+Esta implementação limita a viagem a 16 dias; isso não é uma regra do Google Flights.
+Adultos: inteiro 1–9, padrão 1. Perguntar apenas pelos campos ausentes.
 
 ```bash
-cd "$SKILL_DIR/scripts" && npm i --no-audit --no-fund
+node "$SKILL_DIR/scripts/search.mjs" --origin GYN --destination IGU \
+  --departure 09/10/2026 --return 12/10/2026 --adults 1
 ```
 
-A skill é **autocontida** (instalável por cópia da pasta inteira): o `.cache/` que ela
-gera dentro do dir da skill é runtime (cookies/sessão/diagnóstico) e pode ser apagado.
+Substituir os exemplos pelos parâmetros solicitados. `--json` produz dados estruturados;
+`--debug` grava os cards coletados. Ler [contratos](references/contracts.md) para
+schemas, critérios de sucesso e estado do monitor.
 
-## Step 1 — Collect parameters
+## Apresentação e falhas
 
-| Campo | Formato | Exemplos |
-|-------|---------|----------|
-| origin | IATA, cidade ou UF | `GYN`, `Goiânia`, `goiania`, `Goiânia, GO`, `GO` |
-| destination | IATA, cidade ou UF | `IGU`, `Foz do Iguaçu - PR`, `REC`, `Recife` |
-| departure | `DD/MM/AAAA` (ou ISO `AAAA-MM-DD`) | `09/10/2026` |
-| return | `DD/MM/AAAA` — após a partida, ≤ 16 dias | `12/10/2026` |
+- Só apresentar preço com exit `0`. Sucesso requer seleção do aeroporto esperado,
+  confirmação de passageiros, ida e volta/econômica e datas exibidas.
+- Apresentar a rota selecionada, adultos e horário da consulta. Destacar o menor
+  valor observado e informar que deve ser confirmado antes de comprar.
+- Ausência de resultado de uma companhia não prova ausência de voos. Usar
+  “nenhum resultado encontrado nesta consulta”.
+- Exit `1`: argumentos/preparação/arquivo; `2`: rede ou captcha detectado;
+  `3`: página ou resultados não verificados. Não reaproveitar preços após erro.
+- Captcha/challenge: abortar, informar bloqueio; não contornar nem repetir em loop.
+- Uma busca por execução, com cooldown de 30 segundos. Não executar em rajada.
 
-Opcionais: `--adults N` (1–9, default 1), `--json`, `--state-file PATH`, `--debug`.
+## Monitoramento solicitado pelo usuário
 
-Resolver cidade/UF via dicionário local (~50 aeroportos BR + UFs → capital):
-`SP`/`São Paulo` aceita GRU ou CGH, `RJ` → GIG/SDU, `MG` → CNF/PLU (confere o código
-no dropdown do Google antes de aceitar). Fora da tabela: exigir IATA (o script tenta
-digitar o texto, mas sem garantia).
+Usar `--state-file /caminho/estado.json`. Primeira execução ou mudança de rota,
+passageiros, companhia vencedora ou preço imprime Markdown; sem mudança, stdout vazio.
+Alerta em qualquer mudança, inclusive aumento. Se o pedido for “apenas quando cair”,
+explicar que essa condição exige um filtro adicional no agendador.
 
-Perguntar só o que faltar. Preferir IATA em caso de ambiguidade.
+Usar o agendador disponível no host, com periodicidade diária por padrão e um arquivo
+por consulta. Hermes pode usar seu `cronjob no_agent`; o instalador deste repositório
+não instala no Hermes nem fornece agendador. Não combinar execuções simultâneas que
+compartilhem `.cache/gf-profile` ou o arquivo de estado.
 
-## Step 2 — Run search
-
-Humano (ranking markdown, melhor valor em destaque):
-
-```bash
-node "$SKILL_DIR/scripts/search.mjs" \
-  --origin GYN --destination IGU \
-  --departure 09/10/2026 --return 12/10/2026
-```
-
-Estruturado (contrato JSON estável — DESIGN seção 3):
-
-```bash
-node "$SKILL_DIR/scripts/search.mjs" \
-  --origin GYN --destination IGU \
-  --departure 09/10/2026 --return 12/10/2026 --json
-```
-
-Monitor/watchdog (imprime **só** na 1ª execução ou quando o melhor valor mudou;
-2ª execução sem mudança → stdout vazio):
-
-```bash
-node "$SKILL_DIR/scripts/search.mjs" \
-  --origin GYN --destination IGU \
-  --departure 09/10/2026 --return 12/10/2026 \
-  --state-file /tmp/mpp-state.json
-```
-
-Saída markdown (modo humano/monitor):
-
-```text
-## GYN → IGU — 2026-10-09 a 2026-10-12
-Atualizado: <ISO local>
-
-| Companhia | Menor preço (ida e volta) |
-|---|---|
-| Azul | — (sem voos na rota/datas) |
-| LATAM | R$ 2.955 |
-| Gol | R$ 3.710 |
-
-**Melhor valor: LATAM — R$ 2.955**
-
-_Confirme o preço no site da companhia antes de comprar._
-```
-
-## Step 3 — Present results
-
-- Mostrar o ranking como acima; **destacar o melhor valor** e citar a data de atualização.
-- Datas: o script valida os dias exibidos no Google ANTES de parsear — exit 0 implica
-  `dates_validated: true`. Nunca reportar preço de execução com exit ≠ 0.
-- Não inventar preço: só o que o script imprimir. Companhia sem voo aparece como "—" com nota.
-- Preço = total ida+volta exibido no card (round trip) da companhia.
-- Se o usuário quer monitorar (ex.: "me avisa se cair"), criar cron no_agent (abaixo),
-  não re-executar manualmente.
-
-## Monitor mode (cron no_agent — padrão foz/bps)
-
-Wrapper de exemplo (`~/.hermes/scripts/melhor-preco-monitor.sh`, `chmod +x`):
-
-```bash
-#!/usr/bin/env bash
-SKILL_DIR="$HOME/.hermes/skills/travel/melhor-preco-passagens"
-mkdir -p "$HOME/.hermes/state"
-exec node "$SKILL_DIR/scripts/search.mjs" \
-  --origin GYN --destination IGU \
-  --departure 09/10/2026 --return 12/10/2026 \
-  --state-file "$HOME/.hermes/state/mpp-GYN-IGU.json"
-```
-
-Agendar (stdout vazio = cron não entrega nada; só alerta quando mudou):
-
-```text
-cronjob action=create no_agent=true script=melhor-preco-monitor.sh schedule="0 20 * * *"
-```
-
-## Exit codes
-
-| Código | Significado |
-|---|---|
-| 0 | ok (datas validadas + ranking/JSON; watchdog: pode ter stdout vazio = sem mudança) |
-| 1 | argumentos inválidos (faltando/forma errada, data no passado, viagem > 16 dias, aeroporto não resolvido) |
-| 2 | bloqueio/rede (captcha/challenge → aborta no 1º sinal, com screenshot em `.cache/debug/`) |
-| 3 | datas não validadas na resposta OU nenhum resultado/card parseável — NUNCA reportar preço |
-
-## Rules
-
-- **Volume baixo**: 1 busca por execução; nunca rodar em rajada nem re-executar em loop
-  para "tentar de novo" — cooldown ≥ 30s é embutido; monitorar = cron diário, não chamadas manuais.
-- **Validar datas**: só reportar preço com exit 0 (datas conferidas na tela antes do parse).
-- **Confirmar antes de comprar**: Google Flights é agregador — preço pode defasar do site
-  da companhia. Sempre avisar e conferir no site da Azul/LATAM/GOL antes de comprar.
-- **ToS/risco**: scraping de agregador com volume baixo pode violar ToS; captcha/challenge
-  → abortar (exit 2) e **nunca** contornar nem insistir; reportar o bloqueio ao usuário.
-- Escopo: doméstico BR, econômica, cash, Azul/LATAM/GOL apenas (VoePass e outras ignoradas).
-- Não rodar com `--json` + `--state-file` juntos (JSON vence).
+`--json` tem precedência e não atualiza o arquivo de monitor. `.cache/` guarda perfil,
+cooldown e diagnósticos; atualizações preservam esse estado. Apagar o cache reinicia a
+sessão. Desinstalar remove os dados dentro da pasta da skill; estado externo permanece.

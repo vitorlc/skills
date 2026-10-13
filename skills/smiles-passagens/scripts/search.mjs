@@ -207,8 +207,8 @@ async function main() {
         code: "VALIDATION",
       });
     }
-    if (!Number.isFinite(args.adults) || args.adults < 1) {
-      throw Object.assign(new Error("--adults must be >= 1"), {
+    if (!Number.isInteger(args.adults) || args.adults < 1 || args.adults > 9) {
+      throw Object.assign(new Error("--adults must be an integer between 1 and 9"), {
         code: "VALIDATION",
       });
     }

@@ -1,7 +1,7 @@
 {
   "name": "@vitorlc/skills",
   "version": "1.0.1",
-  "description": "Personal AI agent skills — install globally via npx",
+  "description": "Personal AI agent skills \u2014 install globally via npx",
   "type": "module",
   "bin": {
     "skills": "bin/skills.mjs"
@@ -17,7 +17,9 @@
     "skills/*/styles.json",
     "!**/__pycache__/**",
     "!**/*.pyc",
-    "!**/tests/**"
+    "!**/tests/**",
+    "!**/node_modules/**",
+    "!**/.cache/**"
   ],
   "engines": {
     "node": ">=18"
@@ -39,5 +41,9 @@
   },
   "devDependencies": {
     "semantic-release": "^25.0.8"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs skills/*/tests/*.test.mjs && python3 -B -m unittest discover -s skills/pluggy-investment-report/tests",
+    "test:browser": "SKILLS_BROWSER_TESTS=1 node tests/browser.test.mjs"
   }
 }

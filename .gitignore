@@ -7,3 +7,5 @@ __pycache__/
 node_modules/
 skills/*/tmp/
 skills/*/data/
+
+skills/*/.cache/

@@ -77,11 +77,7 @@ export function rmrf(p) {
       return;
     }
   }
-  try {
-    fs.rmSync(p, { recursive: true, force: true });
-  } catch {
-    // ignore
-  }
+  fs.rmSync(p, { recursive: true, force: true });
 }
 
 /** List top-level directory names that contain SKILL.md */

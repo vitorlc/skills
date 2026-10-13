@@ -1,80 +1,25 @@
-<required_reading>
-- `references/pluggy-api.md` (field mapping, pagination)
-</required_reading>
+# Relatório completo
 
-<context>
-O usuário quer o **relatório completo**: sumário Markdown + HTML com gráficos e diff histórico. Os Steps 0-4 já foram executados.
-</context>
-
-<process>
-### Step 5 — Calcular diff histórico
-
-Compara o portfólio atual com o snapshot anterior. Na primeira execução cria a linha de base; nas seguintes computa o que mudou.
+Usar `SKILL_DIR` e `RUN_DIR` preparados no `SKILL.md`, após coleta bem-sucedida.
+Os comandos relacionados devem executar no mesmo shell.
 
 ```bash
-if python3 "$SKILL_DIR/scripts/snapshot_diff.py" \
-     /tmp/pluggy_investments.json \
-     /tmp/pluggy_diff.json; then
-  chmod 600 /tmp/pluggy_diff.json
-  DIFF_FLAG="--diff /tmp/pluggy_diff.json"
-  echo "✓ Diff computed"
+python3 "$SKILL_DIR/scripts/summary.py" "$RUN_DIR/investments.json" || exit 1
+if python3 "$SKILL_DIR/scripts/snapshot_diff.py" "$RUN_DIR/investments.json" "$RUN_DIR/diff.json"; then
+  python3 "$SKILL_DIR/scripts/generate_report.py" "$RUN_DIR/investments.json" relatorio.html --diff "$RUN_DIR/diff.json"
 else
-  DIFF_FLAG=""
-  echo "⚠ snapshot_diff failed — report will have no evolution data"
+  echo 'Sem evolução: o diff falhou.'
+  python3 "$SKILL_DIR/scripts/generate_report.py" "$RUN_DIR/investments.json" relatorio.html
 fi
 ```
 
-### Step 6 — Exibir sumário Markdown no terminal
+Informar o caminho completo do HTML após sucesso. Abrir no navegador se solicitado
+ou se fizer parte do pedido; usar a ferramenta de abertura disponível no host.
+Chart.js é carregado de CDN, então os gráficos precisam de rede.
 
-Formato exato:
+O botão de remover histórico **oculta** o snapshot naquele navegador; não exclui
+arquivos locais. Metas editadas são baixadas como JSON e precisam ser movidas para
+`$SKILL_DIR/tmp/allocation_targets.json`. Para PDF, usar a impressão do navegador.
 
-```
-## Resumo de Investimentos
-
-| Métrica | Valor |
-|---|---|
-| Total Investido | R$ X.XXX,XX |
-| Valor Atual | R$ X.XXX,XX |
-| Rendimento Total | R$ X.XXX,XX (X,XX%) |
-| Número de Ativos | XX |
-
-### Por Tipo de Ativo
-| Tipo | Valor Atual | % da Carteira |
-|---|---|---|
-| Renda Fixa | R$ X.XXX,XX | XX,X% |
-| Ações | R$ X.XXX,XX | XX,X% |
-...
-```
-
-**Mapeamento de tipos:** `FIXED_INCOME` → Renda Fixa, `EQUITY`/`STOCK` → Ações, `FUND`/`MUTUAL_FUND` → Fundos, `ETF` → ETF, `TREASURY` → Tesouro Direto, `REAL_ESTATE` → FIIs, demais → Outros.
-
-**Análise de alocação** (se `$SKILL_DIR/tmp/allocation_targets.json` existir): aplicar mesma lógica do quick-report.
-
-### Step 7 — Gerar relatório HTML
-
-```bash
-python3 "$SKILL_DIR/scripts/generate_report.py" \
-  /tmp/pluggy_investments.json \
-  relatorio.html \
-  $DIFF_FLAG \
-&& echo "Relatório salvo em: $(pwd)/relatorio.html"
-```
-
-Informar o caminho completo ao usuário.
-
-### Step 8 — Abrir no navegador
-
-```bash
-open relatorio.html        # macOS
-xdg-open relatorio.html    # Linux
-start relatorio.html       # Windows
-```
-</process>
-
-<success_criteria>
-- Sumário Markdown exibido no terminal
-- Relatório HTML gerado em `relatorio.html` no diretório atual
-- Relatório aberto no navegador
-- Dados de evolução incluídos (se diff disponível)
-- Análise de alocação incluída (se metas existirem)
-</success_criteria>
+Sucesso: resumo e HTML correspondem à mesma coleta; a ausência de diff é informada;
+não apresentar erro como carteira vazia nem custo desconhecido como zero.

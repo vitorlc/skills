@@ -43,14 +43,21 @@ class TestAggregate(unittest.TestCase):
     def test_handles_none_values(self):
         invs = [{"amount": None, "value": None}]
         result = self.aggregate(invs)
-        self.assertEqual(result["invested"], 0)
+        self.assertIsNone(result["invested"])
         self.assertEqual(result["current"], 0)
+        self.assertIsNone(result["return_amount"])
 
 
 class TestFirstRun(unittest.TestCase):
     def setUp(self):
-        from snapshot_diff import main
-        self.main = main
+        import snapshot_diff
+        from unittest.mock import patch
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        patcher = patch.object(snapshot_diff, "SNAPSHOT_DIR", Path(self.tmp.name) / "snapshots")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.main = snapshot_diff.main
 
     def test_first_run_returns_zero_and_creates_diff(self):
         with tempfile.TemporaryDirectory() as tmp:

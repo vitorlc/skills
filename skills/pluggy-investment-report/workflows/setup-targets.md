@@ -1,63 +1,27 @@
-<required_reading>
-- `SKILL.md` (prerequisites, Step 0)
-</required_reading>
+# Configurar metas
 
-<context>
-O usuário quer **configurar ou atualizar as metas de alocação** por categoria de investimento.
-</context>
-
-<process>
-### Verificar se skill está instalada
+Se o usuário já informou percentuais e categorias, validar a soma de 100% e salvar
+com os helpers abaixo. Perguntar apenas pelos percentuais ausentes ou inconsistentes.
+Para editar visualmente, gerar um relatório seguindo `full-report.md`, abrir o HTML,
+expandir **Configurar** e baixar **Salvar metas**. Em ambos os casos, instalar o JSON
+validado no caminho da skill; o navegador sozinho não grava nesse diretório.
 
 ```bash
-SKILL_DIR=""; for d in "$HOME/.claude/skills/pluggy-investment-report" "$HOME/.config/opencode/skills/pluggy-investment-report" "$HOME/.agents/skills/pluggy-investment-report"; do [ -d "$d/scripts" ] && { SKILL_DIR="$d"; break; }; done && echo "✓ $SKILL_DIR" || { echo "✗ Not installed — run: npx @vitorlc/skills pluggy-investment-report"; exit 1; }
+python3 - "$SKILL_DIR" /caminho/allocation_targets.json <<'PY'
+import json, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / 'scripts'))
+from report_model import validate_targets, private_json
+targets = validate_targets(json.loads(Path(sys.argv[2]).read_text()))
+if not targets:
+    raise ValueError('Informe metas que somem 100%')
+private_json(root / 'tmp' / 'allocation_targets.json', targets)
+print('Metas salvas')
+PY
 ```
 
-### Gerar relatório uma vez (steps 1-4 do SKILL.md + step 7 de full-report)
-
-Executar autenticação, buscar dados, normalizar e gerar o HTML para ter a interface de configuração.
-
-### Abrir relatório no navegador e configurar
-
-```bash
-open relatorio.html        # macOS
-xdg-open relatorio.html    # Linux
-start relatorio.html       # Windows
-```
-
-Dizer ao usuário:
-1. No relatório aberto, clicar em **"Configurar metas"**
-2. Preencher os percentuais desejados (devem somar 100%)
-3. Clicar em **⬇ Salvar metas**
-4. Mover o arquivo baixado para `$SKILL_DIR/tmp/allocation_targets.json`
-
-```bash
-# Exemplo: após o download, o usuário deve mover o arquivo
-# mv ~/Downloads/allocation_targets.json "$SKILL_DIR/tmp/allocation_targets.json"
-```
-
-### Verificar
-
-```bash
-[ -f "$SKILL_DIR/tmp/allocation_targets.json" ] \
-  && echo "✓ Metas salvas em $SKILL_DIR/tmp/allocation_targets.json" \
-  || echo "✗ Arquivo de metas não encontrado"
-```
-
-**Formato esperado** do arquivo (exemplo):
-
-```json
-{
-  "Renda Fixa": 70,
-  "ETF": 15,
-  "Fundos": 5,
-  "Ações": 10
-}
-```
-</process>
-
-<success_criteria>
-- `$SKILL_DIR/tmp/allocation_targets.json` existe e tem JSON válido
-- Percentuais somam 100
-- Próximo relatório (quick ou full) incluirá a seção de análise de alocação
-</success_criteria>
+Categorias do relatório: Renda Fixa, Ações, Fundos, ETF, Tesouro Direto, FIIs e Outros.
+Valores devem ser números entre 0 e 100 e somar 100 (tolerância de 0,05 ponto).
+Exemplo: `{"Renda Fixa": 70, "ETF": 20, "Ações": 10}`.
+Próximos resumos e relatórios usarão as metas. Categorias omitidas têm meta zero.

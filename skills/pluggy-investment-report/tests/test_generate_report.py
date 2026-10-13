@@ -70,8 +70,8 @@ class TestFormatHelpers(unittest.TestCase):
     def test_get_type_label_etf(self):
         self.assertEqual(self.get_type_label("ETF"), "ETF")
 
-    def test_get_type_label_unknown_passthrough(self):
-        self.assertEqual(self.get_type_label("CUSTOM_TYPE"), "CUSTOM_TYPE")
+    def test_get_type_label_unknown_is_other(self):
+        self.assertEqual(self.get_type_label("CUSTOM_TYPE"), "Outros")
 
 
 class TestGenerateHTML(unittest.TestCase):
@@ -234,7 +234,7 @@ class TestLoadTargets(unittest.TestCase):
             self.module.TARGETS_PATH = original
             pathlib.Path(tmp).unlink(missing_ok=True)
 
-    def test_returns_empty_dict_on_invalid_json(self):
+    def test_rejects_invalid_targets_json(self):
         import tempfile, pathlib
         with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
             f.write("not json")
@@ -242,8 +242,8 @@ class TestLoadTargets(unittest.TestCase):
         original = self.module.TARGETS_PATH
         try:
             self.module.TARGETS_PATH = tmp
-            result = self.load_targets()
-            self.assertEqual(result, {})
+            with self.assertRaises(ValueError):
+                self.load_targets()
         finally:
             self.module.TARGETS_PATH = original
             pathlib.Path(tmp).unlink(missing_ok=True)

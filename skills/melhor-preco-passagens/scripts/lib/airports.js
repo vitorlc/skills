@@ -30,7 +30,7 @@ export const AIRPORTS = {
   POA: 'Porto Alegre',
   VIX: 'Vitória',
   CGB: 'Cuiabá',
-  CAM: 'Campo Grande',
+  CGR: 'Campo Grande',
   SLZ: 'São Luís',
   THE: 'Teresina',
   PMW: 'Palmas',
@@ -65,7 +65,7 @@ export const AIRPORTS = {
 // CNF/PLU "Belo Horizonte") — aceita qualquer um; a query digitada é o nome da cidade.
 export const UF_AIRPORTS = {
   AC: ['RBR'], AL: ['MCZ'], AP: ['MCP'], AM: ['MAO'], BA: ['SSA'], CE: ['FOR'],
-  DF: ['BSB'], ES: ['VIX'], GO: ['GYN'], MA: ['SLZ'], MT: ['CGB'], MS: ['CAM'],
+  DF: ['BSB'], ES: ['VIX'], GO: ['GYN'], MA: ['SLZ'], MT: ['CGB'], MS: ['CGR'],
   MG: ['CNF', 'PLU'], PA: ['BEL'], PB: ['JPA'], PR: ['CWB'], PE: ['REC'],
   PI: ['THE'], RJ: ['GIG', 'SDU'], RN: ['NAT'], RS: ['POA'], RO: ['PVH'],
   RR: ['BVB'], SC: ['FLN'], SP: ['GRU', 'CGH'], SE: ['AJU'], TO: ['PMW'],
@@ -103,17 +103,17 @@ export function resolveAirport(raw) {
   if (/^[A-Z]{3}$/.test(upper)) {
     const name = AIRPORTS[upper];
     if (name) return { query: name, expect: new Set([upper]) };
-    return { query: input, expect: new Set([upper]) }; // código fora da tabela: tenta digitar e conferir
+    return null; // escopo doméstico: exigir código presente na tabela
   }
 
   if (/^[A-Z]{2}$/.test(upper)) {
     const codes = UF_AIRPORTS[upper];
     if (codes) return { query: AIRPORTS[codes[0]], expect: new Set(codes) };
-    return { query: input, expect: null }; // UF fora da tabela: digita e GF decide
+    return null;
   }
 
   const key = normalize(input);
   const codes = CODES_BY_NAME.get(key);
   if (codes) return { query: input, expect: new Set(codes) };
-  return { query: input, expect: null }; // nome livre: GF decide
+  return null;
 }

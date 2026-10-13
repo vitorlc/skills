@@ -2,6 +2,8 @@ name: Release
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   test:
@@ -17,12 +19,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Install Python dependencies
-        run: pip install pytest
       - name: Run tests
-        run: python3 -m pytest skills/*/tests/ -v
+        run: npm test
 
   release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [test]
     runs-on: ubuntu-latest
     permissions:

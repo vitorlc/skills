@@ -34,11 +34,11 @@ export async function httpGetJson(url) {
   const u = new URL(url);
   const res = await fetch(url, {
     method: "GET",
+    signal: AbortSignal.timeout(30_000),
     headers: browserHeaders(u.host),
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    const err = new Error(`HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+    const err = new Error(`Calendar API returned HTTP ${res.status}`);
     err.status = res.status;
     throw err;
   }

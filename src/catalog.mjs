@@ -41,6 +41,7 @@ export function listCatalog() {
 }
 
 export function getSkill(name) {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name || "")) throw new Error("Invalid skill name");
   const dir = path.join(SKILLS_ROOT, name);
   const skillMd = path.join(dir, "SKILL.md");
   if (!fs.existsSync(skillMd)) {

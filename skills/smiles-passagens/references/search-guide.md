@@ -50,3 +50,15 @@ Do not paste hostnames into docs, commits messages, or chat when avoidable.
 - Cabin: economic best-fare calendar
 - Adults: CLI flag
 - Children/infants: 0
+
+## Data and error contract
+
+CLI JSON: `origin`, `destination`, `originName`, `destinationName`, `adults`, `rate`,
+`departure`/`return` (`date`, `miles`, `brl`), `total` (`miles`, `brl`),
+`cheapestDeparture`/`cheapestReturn` (distinct mileage price → ISO dates).
+Unavailable requested fares and incomplete totals are `null`. Error output is text
+on stderr, with exit `1` for validation or `2` for transport/absent calendar.
+
+Dates must exist and return must not precede departure. Adults must be integer 1–9.
+Each calendar window starts on the last day of the preceding month and ends on the
+first day of the next month. HTTP requests time out after 30 seconds, without retry.
