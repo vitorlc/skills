@@ -12,11 +12,11 @@ import json, sys
 from pathlib import Path
 root = Path(sys.argv[1])
 sys.path.insert(0, str(root / 'scripts'))
-from report_model import validate_targets, private_json
+from report_model import validate_targets, private_json, data_dir
 targets = validate_targets(json.loads(Path(sys.argv[2]).read_text()))
 if not targets:
     raise ValueError('Informe metas que somem 100%')
-private_json(root / 'tmp' / 'allocation_targets.json', targets)
+private_json(data_dir() / 'allocation_targets.json', targets)
 print('Metas salvas')
 PY
 ```
