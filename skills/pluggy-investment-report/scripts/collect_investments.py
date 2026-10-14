@@ -2,6 +2,7 @@
 """Collect a complete Pluggy portfolio without printing credentials or raw responses."""
 import argparse
 import json
+import math
 import os
 import sys
 from urllib.error import HTTPError, URLError
@@ -83,7 +84,47 @@ def list_investments(request, api_key, item_id):
     raise ApiError("Investments pagination limit exceeded")
 
 
+def list_transactions(request, api_key, investment_id):
+    """Application/withdrawal history of one investment (paginated)."""
+    result = []
+    for page in range(1, 1001):
+        query = urlencode({"page": page, "pageSize": 500})
+        data = request(f"/investments/{quote(investment_id, safe='')}/transactions?{query}", api_key=api_key)
+        rows, total_pages = data.get("results"), data.get("totalPages")
+        if not isinstance(rows, list):
+            raise ApiError("Invalid transactions page")
+        for row in rows:
+            result.append(normalize_transaction(row))
+        if type(total_pages) is not int or page >= total_pages:
+            return result
+    raise ApiError("Transactions pagination limit exceeded")
+
+
+def normalize_transaction(raw):
+    if not isinstance(raw, dict):
+        raise ValueError("Invalid transaction")
+    date = raw.get("tradeDate") or raw.get("date")
+    kind = raw.get("type")
+    if not isinstance(date, str) or not isinstance(kind, str):
+        raise ValueError("Transaction without date or type")
+    return {"date": date, "type": kind, "amount": number(raw.get("amount"), "transaction amount")}
+
+
+def soft_number(value):
+    """Informational fields must never abort a collection."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return value
+
+
+def soft_text(value):
+    return value if isinstance(value, str) and value else None
+
+
 def normalize(raw, institution):
+    holding = raw.get("institution")
+    if isinstance(holding, dict) and isinstance(holding.get("name"), str) and holding["name"]:
+        institution = holding["name"]  # e.g. CEI/B3: the broker holding this asset
     if raw.get("currencyCode") not in (None, "BRL"):
         raise ValueError("Non-BRL investment: currency conversion is not supported")
     value = number(raw.get("balance"), "balance")
@@ -99,10 +140,17 @@ def normalize(raw, institution):
         code = "TREASURY"
     return {"id": raw["id"], "name": raw.get("name") or "-", "institution": institution,
             "type": code, "amount": amount, "value": value, "return_amount": profit,
-            "return_rate": rate, "maturity_date": raw.get("dueDate")}
+            "return_rate": rate, "maturity_date": raw.get("dueDate"),
+            "subtype": soft_text(raw.get("subtype")), "rate_type": soft_text(raw.get("rateType")),
+            "rate": soft_number(raw.get("rate")), "fixed_annual_rate": soft_number(raw.get("fixedAnnualRate")),
+            "issuer": soft_text(raw.get("issuer")), "issue_date": soft_text(raw.get("issueDate")),
+            "quantity": soft_number(raw.get("quantity")), "as_of": soft_text(raw.get("date")),
+            "last_twelve_months_rate": soft_number(raw.get("lastTwelveMonthsRate")),
+            "status": soft_text(raw.get("status"))}
 
 
-def collect(client_id, client_secret, item_ids=None, request=request_json):
+def collect(client_id, client_secret, item_ids=None, request=request_json,
+            with_transactions=False, warnings=None):
     auth = request("/auth", payload={"clientId": client_id, "clientSecret": client_secret})
     key = auth.get("apiKey")
     if not isinstance(key, str) or not key:
@@ -122,7 +170,16 @@ def collect(client_id, client_secret, item_ids=None, request=request_json):
             raise ApiError("Invalid connector response")
         institution = connector.get("name") or "Desconhecida"
         for raw in list_investments(request, key, item["id"]):
-            result.append(normalize(raw, institution))
+            row = normalize(raw, institution)
+            if with_transactions:
+                # Unknown (None) differs from "no transactions" ([]); failures never abort the run.
+                try:
+                    row["transactions"] = list_transactions(request, key, raw["id"])
+                except (ApiError, ValueError):
+                    row["transactions"] = None
+                    if warnings is not None:
+                        warnings.append(raw["id"])
+            result.append(row)
     if not seen_items:
         raise ApiError("No connected items. Connect an account before collecting investments")
     return investments_list(result)
@@ -132,14 +189,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", help="Private JSON output path")
     parser.add_argument("--item-id", action="append", help="Known item ID; repeat for multiple connections")
+    parser.add_argument("--with-transactions", action="store_true",
+                        help="Also fetch each investment's transactions (one extra request per investment)")
     args = parser.parse_args()
     client_id, secret = os.environ.get("PLUGGY_CLIENT_ID"), os.environ.get("PLUGGY_CLIENT_SECRET")
     if not client_id or not secret:
         print("Set PLUGGY_CLIENT_ID and PLUGGY_CLIENT_SECRET in the environment", file=sys.stderr)
         return 1
     try:
-        result = collect(client_id, secret, args.item_id)
+        warnings = []
+        result = collect(client_id, secret, args.item_id, with_transactions=args.with_transactions, warnings=warnings)
         private_json(args.output, result)
+        if warnings:
+            print(f"Transactions unavailable for {len(warnings)} of {len(result)} investments; "
+                  "flows for those will be estimated", file=sys.stderr)
     except ApiError as exc:
         print(str(exc), file=sys.stderr)
         return 2

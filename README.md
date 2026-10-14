@@ -42,7 +42,7 @@ npx @vitorlc/skills which <skill>
 
 | Skill | Description |
 |-------|-------------|
-| `pluggy-investment-report` | Consolidated investment report from Pluggy-connected accounts |
+| `pluggy-investment-report` | Portfolio report from Pluggy-connected accounts: history, period performance vs CDI/IPCA, deposit-first rebalancing and FGC/concentration/maturity alerts |
 | `smiles-passagens` | Smiles/GOL round-trip miles search (calendar, SMILES_CLUB) |
 | `melhor-preco-passagens` | Cheapest round-trip fare in BRL comparing Azul × LATAM × GOL (Google Flights, Playwright) |
 
@@ -52,6 +52,12 @@ npx @vitorlc/skills which <skill>
 export PLUGGY_CLIENT_ID="..."
 export PLUGGY_CLIENT_SECRET="..."
 ```
+
+Optional Pluggy settings:
+
+- `PLUGGY_REPORT_DATA_DIR`: keep history and targets outside the installation (one history shared by every host). `tmp/` is copied once, never moved.
+- `collect_investments.py --with-transactions`: fetch each investment's transactions so returns can be separated from deposits/withdrawals.
+- `performance.py --benchmarks` queries the public Banco Central API (CDI, IPCA); it is opt-in and needs no credentials.
 
 Never commit credentials. Local state under each installed skill (`tmp/`, `data/`, `.cache/`, root `.env` and root HTML reports) is preserved across updates, including independent copies. `.env` is not loaded automatically. Uninstall removes that target and its local state; it refuses to remove a directory still shared by an unselected host. Dependencies in `scripts/node_modules` survive updates unless the dependency lockfile changes; then run the skill setup again.
 

@@ -1,6 +1,6 @@
 ---
 name: pluggy-investment-report
-description: Gera resumo e relatório HTML da carteira de investimentos conectada à Pluggy, com histórico e metas de alocação. Use para consultar a própria carteira, rendimentos ou configurar suas metas.
+description: Resume e analisa a carteira de investimentos conectada à Pluggy - rentabilidade no período (vs CDI/IPCA), evolução histórica, rebalanceamento por aporte e alertas de FGC, concentração e vencimentos - e gera relatório HTML. Use para consultar a carteira, rendimentos, metas ou sugestões de movimentação.
 ---
 
 # Relatório de investimentos Pluggy
@@ -16,7 +16,8 @@ existentes. Para demo, usar uma conexão sandbox já configurada.
 Inferir o modo do pedido; perguntar apenas se estiver ambíguo:
 
 - Resumo no terminal: [quick-report](workflows/quick-report.md).
-- HTML com gráficos e histórico: [full-report](workflows/full-report.md).
+- HTML com gráficos, histórico, rentabilidade e rebalanceamento: [full-report](workflows/full-report.md).
+- Analisar desempenho e sugerir movimentações (rentabilidade, CDI, aporte, alertas): [analyze](workflows/analyze.md).
 - Configurar metas: [setup-targets](workflows/setup-targets.md).
 
 ## Localizar a instalação
@@ -40,6 +41,10 @@ RUN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pluggy-report.XXXXXXXX")
 python3 "$SKILL_DIR/scripts/collect_investments.py" "$RUN_DIR/investments.json"
 ```
 
+Para medir rentabilidade separando aportes e resgates, acrescentar `--with-transactions`
+(uma requisição extra por investimento; falhas viram "desconhecido" e não abortam a coleta).
+Sem esse flag, os aportes são estimados pela variação do custo original.
+
 A listagem `/v2/items` precisa estar habilitada pela Pluggy. Se retornar 403, usar
 IDs de conexões já conhecidos, repetindo `--item-id ID` para cada conta desejada.
 Não inventar IDs nem substituir uma carteira completa por uma única conexão sem
@@ -53,16 +58,35 @@ lista vazia válida. Ausência de conexões é reportada como erro.
 
 ## Resultados e estado
 
-- Usar `summary.py` para o Markdown; não recalcular os totais pelo agente.
-- `generate_report.py` e `snapshot_diff.py` consomem a mesma lista normalizada.
-- Custo/rendimento ausente é **não informado**, nunca inferido como zero.
-- `tmp/snapshots/` mantém até 12 execuções; `tmp/allocation_targets.json` guarda metas.
+- Usar `summary.py` para o Markdown (`--json` para dados estruturados); não recalcular
+  os totais pelo agente. `performance.py` e `rebalance.py` também aceitam `--json`.
+- `generate_report.py`, `snapshot_diff.py`, `performance.py` e `rebalance.py` consomem a
+  mesma lista normalizada.
+- Custo/rendimento ausente é **não informado**, nunca inferido como zero. O resumo mostra
+  também o rendimento parcial dos ativos com custo informado, com a cobertura.
+- Histórico em `tmp/snapshots/` (ou `$PLUGGY_REPORT_DATA_DIR/snapshots`; metas em
+  `allocation_targets.json` no mesmo diretório). Retenção: tudo dos últimos 7 dias, um por
+  dia até 90 dias e um por mês depois. Ao definir `PLUGGY_REPORT_DATA_DIR`, o conteúdo de
+  `tmp/` é copiado uma única vez (nunca movido), permitindo um histórico compartilhado
+  entre hosts.
 - Intermediários, snapshots e HTML são escritos atomicamente com modo `600`.
   O diretório de cada execução criado acima tem modo `700`.
-- Evitar duas execuções simultâneas para a mesma carteira: o histórico é compartilhado
-  por instalação. Cópias independentes de hosts têm históricos independentes.
+- O histórico é protegido por trava de arquivo contra execuções simultâneas. Cópias
+  independentes de hosts têm históricos independentes, salvo com `PLUGGY_REPORT_DATA_DIR`.
 - Atualizações preservam `tmp/`; desinstalação remove os dados daquele destino.
+- Ordem importa: `performance.py` lê o histórico e deve rodar **antes** de
+  `snapshot_diff.py` registrar a coleta atual.
 
-Erros do coletor: `1` configuração/dados/arquivo, `2` API/rede. O diff é opcional:
-se falhar, continuar com o relatório atual sem evolução e informar a ausência.
-Metas inválidas devem ser corrigidas; não descartá-las silenciosamente.
+Erros do coletor: `1` configuração/dados/arquivo, `2` API/rede. O diff, a rentabilidade e
+o rebalanceamento são opcionais: se falharem, continuar com o relatório atual sem essas
+seções e informar a ausência. Metas inválidas devem ser corrigidas; não descartá-las
+silenciosamente.
+
+## Salvaguardas das sugestões
+
+- Sugerir por **classe de ativo**; nunca recomendar um título ou ativo específico.
+- Por padrão, só indicar para onde vai dinheiro novo (sem vender). Sugerir vendas apenas
+  se o usuário pedir, lembrando IR, IOF, come-cotas e liquidez.
+- Não inventar CDI, IPCA ou preços: usar só números retornados pelos scripts e dizer
+  quando o benchmark estiver indisponível.
+- Concluir com o aviso de que não é recomendação de investimento.
