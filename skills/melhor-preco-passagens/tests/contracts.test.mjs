@@ -3,12 +3,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseArgs, selectAirport, updateMonitor, errorCode } from '../scripts/lib/contracts.js';
+import { parseArgs, selectAirport, datesConfirmed, updateMonitor, errorCode } from '../scripts/lib/contracts.js';
 import { resolveAirport } from '../scripts/lib/airports.js';
 
 test('arguments reject unknown flags, missing values and unexpected positional data', () => {
   for (const args of [['--adults'], ['--origin', '--json'], ['--unknown'], ['GYN']]) assert.throws(() => parseArgs(args));
   assert.deepEqual(parseArgs(['--origin', 'GYN', '--json']), { origin: 'GYN', json: true });
+});
+test('missing or disagreeing date fields are not confirmed', () => {
+  assert.equal(datesConfirmed([], 'sex9deout'), false);
+  assert.equal(datesConfirmed(['sex9deout', 'seg12deout'], 'sex9deout'), false);
+  assert.equal(datesConfirmed(['sex9deout'], 'sex9deout'), true);
 });
 test('an unexpected airport is never selected as fallback', () => {
   assert.equal(selectAirport([{ code: 'GRX' }], new Set(['GYN'])), null);

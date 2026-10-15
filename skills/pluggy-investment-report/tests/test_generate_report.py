@@ -154,6 +154,29 @@ class TestGenerateHTML(unittest.TestCase):
     def test_sortable_table_script(self):
         html = self._html()
         self.assertIn("sortTable", html)
+        self.assertIn("startsWith('↓')", html)
+
+    def test_hidden_chart_points_reapply_on_load(self):
+        html = self._html()
+        self.assertIn("rebuildLineChart();\n  </script>", html)
+
+    def test_history_skips_newest_only_after_a_saved_diff(self):
+        import generate_report
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            snap = os.path.join(tmp, "snapshots")
+            os.mkdir(snap)
+            for name, ts in (
+                ("2026-01-01_100000_000000.json", "2026-01-01T10:00:00"),
+                ("2026-02-01_100000_000000.json", "2026-02-01T10:00:00"),
+            ):
+                with open(os.path.join(snap, name), "w") as f:
+                    json.dump({"timestamp": ts, "totals": {"current": 1}, "investments": []}, f)
+            with patch.object(generate_report, "SNAPSHOT_DIR", __import__("pathlib").Path(snap)):
+                kept = [s["timestamp"] for s in generate_report.load_all_snapshots()]
+                skipped = [s["timestamp"] for s in generate_report.load_all_snapshots(skip_newest=True)]
+            self.assertEqual(kept, ["2026-02-01T10:00:00", "2026-01-01T10:00:00"])
+            self.assertEqual(skipped, ["2026-01-01T10:00:00"])
 
     def test_returns_output_path(self):
         from generate_report import generate_html

@@ -109,6 +109,20 @@ class TestDiffAssets(unittest.TestCase):
         self.assertEqual(len(result["removed"]), 1)
         self.assertEqual(result["removed"][0]["name"], "PETR4")
 
+    def test_repeated_name_is_not_paired(self):
+        prev = [
+            {"id": "old1", "name": "CDB", "institution": "X", "value": 10000},
+            {"id": "old2", "name": "CDB", "institution": "X", "value": 50000},
+        ]
+        curr = [
+            {"id": "new1", "name": "CDB", "institution": "X", "value": 50000},
+            {"id": "new2", "name": "CDB", "institution": "X", "value": 10000},
+        ]
+        result = self.diff_assets(prev, curr)
+        self.assertEqual(result["changed"], [])
+        self.assertEqual(len(result["new"]), 2)
+        self.assertEqual(len(result["removed"]), 2)
+
     def test_fuzzy_match_by_name_when_id_changes(self):
         prev = [{"id": "old1", "name": "CDB", "institution": "X", "type": "FIXED_INCOME", "value": 100, "return_amount": 5}]
         curr = [{"id": "new1", "name": "CDB", "institution": "X", "type": "FIXED_INCOME", "value": 110, "return_amount": 15}]
