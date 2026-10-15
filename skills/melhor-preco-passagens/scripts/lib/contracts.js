@@ -25,6 +25,10 @@ export function selectAirport(options, expected) {
   return options.find(option => expected.has(option.code)) || null;
 }
 
+export function datesConfirmed(shown, expected) {
+  return shown.length > 0 && shown.every((token) => token === expected);
+}
+
 export function stateFor(out) {
   return { schema_version: 1, route: out.route, adults: out.adults, cabin: out.cabin,
     currency: out.currency, best_airline: out.best?.airline ?? null, best_price: out.best?.price ?? null };

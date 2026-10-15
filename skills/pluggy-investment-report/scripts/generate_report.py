@@ -15,6 +15,7 @@ from html import escape as _e
 from report_model import TYPE_LABELS, get_type_label, investments_list, validate_targets, private_write
 
 TARGETS_PATH = str(Path(__file__).resolve().parent.parent / "tmp" / "allocation_targets.json")
+SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "tmp" / "snapshots"
 
 
 def format_currency(value: float) -> str:
@@ -66,13 +67,12 @@ def load_snapshots_series() -> tuple[list[str], list[float]]:
     return labels, values
 
 
-def load_all_snapshots() -> list[dict]:
-    """Returns all snapshots newest-first (skipping the current run) for the history panel."""
-    snap_dir = Path(__file__).resolve().parent.parent / "tmp" / "snapshots"
-    if not snap_dir.exists():
+def load_all_snapshots(skip_newest=False) -> list[dict]:
+    """Newest-first snapshots. Skip the newest only after this run just saved one."""
+    if not SNAPSHOT_DIR.exists():
         return []
     result = []
-    for f in sorted(snap_dir.glob("*.json"), reverse=True):
+    for f in sorted(SNAPSHOT_DIR.glob("*.json"), reverse=True):
         try:
             d = json.loads(f.read_text())
             result.append({
@@ -82,7 +82,7 @@ def load_all_snapshots() -> list[dict]:
             })
         except (KeyError, ValueError, json.JSONDecodeError):
             continue
-    return result[1:]  # [0] is the snapshot just saved for the current run
+    return result[1:] if skip_newest else result
 
 
 def load_snapshots_series_full() -> list[dict]:
@@ -318,7 +318,7 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     snap_series_full = load_snapshots_series_full()
     snap_series_full_js = json.dumps(snap_series_full)
 
-    history_snapshots = load_all_snapshots()
+    history_snapshots = load_all_snapshots(skip_newest=diff is not None)
     history_js = json.dumps(history_snapshots).replace("<", "\\u003c")
     history_count = len(history_snapshots)
 
@@ -854,8 +854,11 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
       rows.sort((a, b) => {{
         const av = a.cells[col].textContent.trim();
         const bv = b.cells[col].textContent.trim();
-        const an = parseFloat(av.replace(/[^\\d,\\-]/g, '').replace('.', '').replace(',', '.'));
-        const bn = parseFloat(bv.replace(/[^\\d,\\-]/g, '').replace('.', '').replace(',', '.'));
+        const num = (text) => {{
+          const n = parseFloat(text.replace(/[^\\d,\\-]/g, '').replace('.', '').replace(',', '.'));
+          return text.startsWith('↓') ? -n : n;
+        }};
+        const an = num(av), bn = num(bv);
         if (!isNaN(an) && !isNaN(bn)) return _sortDir[col] ? an - bn : bn - an;
         return _sortDir[col] ? av.localeCompare(bv, 'pt-BR') : bv.localeCompare(av, 'pt-BR');
       }});
@@ -904,6 +907,8 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
     }}
+
+    rebuildLineChart();
   </script>
 </body>
 </html>"""

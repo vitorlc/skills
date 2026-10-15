@@ -58,5 +58,7 @@ O diff contém `first_run`, timestamps, `totals` (`prev`, `curr`, `delta`) e `as
 (`changed`, `new`, `removed`). Delta entre métricas desconhecidas é `null`.
 Snapshots anteriores permanecem legíveis; métricas antigas de custo/rendimento podem
 seguir o mapeamento anterior, portanto não representam uma série recalculada.
-Metas inválidas interrompem o relatório. Categorias da carteira omitidas nas metas
-entram na análise com alvo zero; desvios de pelo menos 2 pontos geram sugestões.
+Metas inválidas interrompem o relatório, inclusive nome de categoria fora dos sete
+rótulos. Categorias da carteira omitidas nas metas entram na análise com alvo zero;
+desvios de pelo menos 2 pontos geram sugestões. Nome repetido sem id estável não é
+pareado: entra como saiu e entrou, sem delta inventado.
