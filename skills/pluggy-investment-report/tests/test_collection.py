@@ -97,7 +97,7 @@ class ModelTests(unittest.TestCase):
     def test_rejects_bad_shapes_and_non_finite_money(self):
         for data in [None, {}, [1], [{'value': '100'}], [{'value': float('nan')}]]:
             with self.assertRaises(ValueError): investments_list(data)
-        for targets in [[], {'ETF': 10}, {'ETF': -10, 'Ações': 110}, {'ETF': float('nan')}]:
+        for targets in [[], {'ETF': 10}, {'ETF': -10, 'Ações': 110}, {'ETF': float('nan')}, {'FIXED_INCOME': 100}]:
             with self.assertRaises(ValueError): validate_targets(targets)
 
     def test_private_atomic_outputs_and_consistent_zero_negative_values(self):

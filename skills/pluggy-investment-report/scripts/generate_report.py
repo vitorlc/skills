@@ -1078,6 +1078,8 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
     }}
+
+    rebuildLineChart();
   </script>
 </body>
 </html>"""

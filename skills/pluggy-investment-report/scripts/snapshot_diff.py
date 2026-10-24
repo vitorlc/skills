@@ -134,9 +134,8 @@ def diff_totals(prev_tot: dict, curr_tot: dict) -> dict:
 
 
 def match_assets(prev_invs: list[dict], curr_invs: list[dict]):
-    """Match in two passes: by Pluggy id first, then by (institution, name)
-    for assets unmatched in either side (handles item recreation, where ids
-    rotate but the underlying asset is the same).
+    """Match by Pluggy id, then by a unique (institution, name).
+    A repeated name is not paired: that would invent a gain after ids rotate.
     Returns (pairs, unmatched_curr, unmatched_prev)."""
 
     unmatched_prev = list(prev_invs)
@@ -159,16 +158,19 @@ def match_assets(prev_invs: list[dict], curr_invs: list[dict]):
             next_unmatched_prev.append(p)
 
     prev_by_name: dict[tuple, list[dict]] = {}
+    curr_by_name: dict[tuple, list[dict]] = {}
     for p in next_unmatched_prev:
         prev_by_name.setdefault(name_key(p), []).append(p)
-    final_unmatched_curr = []
     for c in next_unmatched_curr:
-        bucket = prev_by_name.get(name_key(c))
-        if bucket:
-            pairs.append((bucket.pop(0), c))
+        curr_by_name.setdefault(name_key(c), []).append(c)
+    final_unmatched_prev, final_unmatched_curr = [], []
+    for key in set(prev_by_name) | set(curr_by_name):
+        prev_bucket, curr_bucket = prev_by_name.get(key, []), curr_by_name.get(key, [])
+        if len(prev_bucket) == 1 and len(curr_bucket) == 1:
+            pairs.append((prev_bucket[0], curr_bucket[0]))
         else:
-            final_unmatched_curr.append(c)
-    final_unmatched_prev = [p for bucket in prev_by_name.values() for p in bucket]
+            final_unmatched_prev.extend(prev_bucket)
+            final_unmatched_curr.extend(curr_bucket)
     return pairs, final_unmatched_curr, final_unmatched_prev
 
 

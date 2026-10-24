@@ -144,6 +144,9 @@ def aggregate(invs):
     return {"invested": invested, "current": current, "return_amount": profit, "return_rate": rate, "count": len(invs)}
 
 
+TARGET_CATEGORIES = set(TYPE_LABELS.values())
+
+
 def coverage(invs):
     """Return known-cost subtotal so one unknown cost does not hide the whole result."""
     known = [i for i in invs if i.get("amount") is not None and _profit(i) is not None]
@@ -174,6 +177,8 @@ def validate_targets(targets):
     if not isinstance(targets, dict):
         raise ValueError("Allocation targets must be an object")
     for category, value in targets.items():
+        if category not in TARGET_CATEGORIES:
+            raise ValueError(f"Unknown allocation category: {category}")
         number(value, "target")
         if not 0 <= value <= 100:
             raise ValueError("Allocation targets must be between 0 and 100")

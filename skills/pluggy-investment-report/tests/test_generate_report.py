@@ -155,6 +155,10 @@ class TestGenerateHTML(unittest.TestCase):
         html = self._html()
         self.assertIn("sortTable", html)
 
+    def test_hidden_chart_points_reapply_on_load(self):
+        html = self._html()
+        self.assertIn("rebuildLineChart();\n  </script>", html)
+
     def test_returns_output_path(self):
         from generate_report import generate_html
         result = generate_html(SAMPLE_INVESTMENTS, self.output)

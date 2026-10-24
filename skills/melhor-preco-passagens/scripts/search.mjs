@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { normalizeAirline, parseBRL, AIRLINE_LABELS } from './lib/airlines.js';
 import { resolveAirport } from './lib/airports.js';
 import { readPassengerCounts } from './lib/ui.js';
-import { parseArgs, selectAirport, updateMonitor, errorCode } from './lib/contracts.js';
+import { parseArgs, selectAirport, datesConfirmed, updateMonitor, errorCode } from './lib/contracts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJ_ROOT = path.resolve(__dirname, '..');
@@ -401,13 +401,10 @@ async function main() {
     const expectedRet = normalizeToken(fmtShortDate(ret));
     const depShown = [...new Set(shownDates.filter((s) => s.kind === 'Partida' && normalizeToken(s.val)).map((s) => normalizeToken(s.val)))];
     const retShown = [...new Set(shownDates.filter((s) => s.kind === 'Volta' && normalizeToken(s.val)).map((s) => normalizeToken(s.val)))];
-    // Datas exibidas no corpo (cabeçalho do resultado, ex. "sex., 9 de out. – seg., 12 de out.")
     const bodyText = await page.evaluate(() => (document.body ? document.body.innerText : ''));
     const bodyNorm = normalizeToken(bodyText);
-    const depOkInputs = depShown.length > 0 && depShown.every((t) => t === expectedDep);
-    const retOkInputs = retShown.length > 0 && retShown.every((t) => t === expectedRet);
-    const depOk = depOkInputs || (depShown.length === 0 && bodyNorm.includes(expectedDep));
-    const retOk = retOkInputs || (retShown.length === 0 && bodyNorm.includes(expectedRet));
+    const depOk = datesConfirmed(depShown, expectedDep);
+    const retOk = datesConfirmed(retShown, expectedRet);
 
     if (!depOk || !retOk) {
       await saveScreenshot(page, 'error-dates-mismatch.png');

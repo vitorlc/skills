@@ -43,7 +43,7 @@ Saída vazia com exit `0` significa ausência de mudança, não erro nem falta d
 ## Limites operacionais
 
 O calendário é selecionado por labels contendo dia, mês e ano; os resultados são
-conferidos pelos campos de data visíveis (com fallback de cabeçalho). Aeroportos fora
+conferidos pelos campos de data visíveis. Sem esses campos, a busca falha (exit 3). Aeroportos fora
 da tabela doméstica são rejeitados. Mudanças no DOM/idioma podem interromper a busca;
 nesse caso, guardar o diagnóstico e corrigir os seletores antes de voltar a cotar.
 O cooldown não é um lock: usar uma execução por perfil de Chromium por vez.

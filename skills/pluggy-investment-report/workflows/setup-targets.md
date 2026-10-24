@@ -22,6 +22,7 @@ PY
 ```
 
 Categorias do relatório: Renda Fixa, Ações, Fundos, ETF, Tesouro Direto, FIIs e Outros.
+Qualquer outro nome, inclusive código da API (`FIXED_INCOME`), é erro.
 Valores devem ser números entre 0 e 100 e somar 100 (tolerância de 0,05 ponto).
 Exemplo: `{"Renda Fixa": 70, "ETF": 20, "Ações": 10}`.
 Próximos resumos e relatórios usarão as metas. Categorias omitidas têm meta zero.
