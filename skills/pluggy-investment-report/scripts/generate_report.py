@@ -2,6 +2,7 @@
 """
 Pluggy Investment Report Generator
 Usage: python generate_report.py <investments.json> [output.html] [--diff diff.json]
+                                 [--performance perf.json] [--rebalance reb.json]
 
 investments.json must be a JSON array of objects with fields:
   id, name, institution, type, value, maturity_date
@@ -12,15 +13,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from html import escape as _e
-from report_model import TYPE_LABELS, get_type_label, investments_list, validate_targets, private_write
+import snapshot_diff
+from report_model import (TYPE_LABELS, build_allocation_analysis, coverage, data_dir, format_currency,
+                          format_percentage, get_type_label, investments_list, migrate_legacy,
+                          money_or_unknown, parse_ts, percent_or_unknown, private_write, profit_of, validate_targets)
 
-TARGETS_PATH = str(Path(__file__).resolve().parent.parent / "tmp" / "allocation_targets.json")
-
-
-def format_currency(value: float) -> str:
-    sign = "-R$ " if value < 0 else "R$ "
-    formatted = f"{abs(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    return f"{sign}{formatted}"
+TARGETS_PATH = str(data_dir() / "allocation_targets.json")
 
 
 def format_delta(value: float) -> tuple[str, str]:
@@ -30,10 +28,6 @@ def format_delta(value: float) -> tuple[str, str]:
     if value < 0:
         return f"↓ {format_currency(abs(value))}", "negative"
     return "—", "neutral"
-
-
-def format_percentage(value: float) -> str:
-    return f"{value:.2f}%".replace(".", ",")
 
 
 def format_date(value: str | None) -> str:
@@ -49,58 +43,29 @@ def format_date(value: str | None) -> str:
 ALL_TYPE_LABELS = {"Renda Fixa", "Ações", "Fundos", "ETF", "Tesouro Direto", "FIIs", "Outros"}
 
 
-def load_snapshots_series() -> tuple[list[str], list[float]]:
-    """Returns (labels, values) from all saved snapshots, sorted by timestamp."""
-    snap_dir = Path(__file__).resolve().parent.parent / "tmp" / "snapshots"
-    if not snap_dir.exists():
-        return [], []
-    labels, values = [], []
-    for f in sorted(snap_dir.glob("*.json")):
-        try:
-            d = json.loads(f.read_text())
-            dt = datetime.fromisoformat(d["timestamp"])
-            labels.append(dt.strftime("%d/%m %H:%M"))
-            values.append(round(d["totals"]["current"], 2))
-        except (KeyError, ValueError):
-            continue
-    return labels, values
-
-
-def load_all_snapshots() -> list[dict]:
-    """Returns all snapshots newest-first (skipping the current run) for the history panel."""
-    snap_dir = Path(__file__).resolve().parent.parent / "tmp" / "snapshots"
-    if not snap_dir.exists():
-        return []
-    result = []
-    for f in sorted(snap_dir.glob("*.json"), reverse=True):
-        try:
-            d = json.loads(f.read_text())
-            result.append({
-                "timestamp": d["timestamp"],
-                "totals": d["totals"],
-                "investments": d.get("investments", []),
-            })
-        except (KeyError, ValueError, json.JSONDecodeError):
-            continue
-    return result[1:]  # [0] is the snapshot just saved for the current run
-
-
 def load_snapshots_series_full() -> list[dict]:
-    """Returns all snapshots oldest-first as {timestamp, label, value} for JS line chart rebuild."""
-    snap_dir = Path(__file__).resolve().parent.parent / "tmp" / "snapshots"
-    if not snap_dir.exists():
-        return []
+    """All snapshots oldest-first as {timestamp, x (epoch ms), label, value} for the line chart."""
     result = []
-    for f in sorted(snap_dir.glob("*.json")):
+    for snap in snapshot_diff.list_snapshots():
         try:
-            d = json.loads(f.read_text())
-            dt = datetime.fromisoformat(d["timestamp"])
-            result.append({
-                "timestamp": d["timestamp"],
-                "label": dt.strftime("%d/%m %H:%M"),
-                "value": round(d["totals"]["current"], 2),
-            })
-        except (KeyError, ValueError):
+            dt = parse_ts(snap["timestamp"])
+            result.append({"timestamp": snap["timestamp"], "x": int(dt.timestamp() * 1000),
+                           "label": dt.strftime("%d/%m/%Y %H:%M"), "value": round(snap["totals"]["current"], 2)})
+        except (KeyError, ValueError, TypeError):
+            continue
+    return result
+
+
+def load_all_snapshots(skip_timestamp: str | None = None) -> list[dict]:
+    """Snapshots newest-first for the history panel, minus the one that belongs to the current run."""
+    result = []
+    for snap in reversed(snapshot_diff.list_snapshots()):
+        if skip_timestamp and snap["timestamp"] == skip_timestamp:
+            continue
+        try:
+            result.append({"timestamp": snap["timestamp"], "totals": snap["totals"],
+                           "investments": snap.get("investments", [])})
+        except KeyError:
             continue
     return result
 
@@ -135,48 +100,6 @@ def build_asset_deltas(diff: dict | None) -> dict:
         if item.get("id"):
             deltas[item["id"]] = item.get("value_curr", 0)
     return deltas
-
-
-def build_allocation_analysis(
-    type_totals: dict, targets: dict, total_current: float
-) -> dict | None:
-    if not targets or not total_current:
-        return None
-
-    rows = []
-    for category in sorted(set(type_totals) | set(targets)):
-        target_pct = targets.get(category, 0)
-        actual_value = type_totals.get(category, 0)
-        actual_pct = round(actual_value / total_current * 100, 1)
-        deviation = round(actual_pct - target_pct, 1)
-        rows.append({
-            "category": category,
-            "target_pct": target_pct,
-            "actual_pct": actual_pct,
-            "deviation": deviation,
-        })
-
-    if not rows:
-        return None
-
-    recommendations = []
-    for row in sorted(rows, key=lambda r: abs(r["deviation"]), reverse=True):
-        if abs(row["deviation"]) >= 2:
-            if row["deviation"] > 0:
-                recommendations.append(
-                    f"↓ Reduzir {row['category']} ({row['deviation']:+.0f}% acima da meta)"
-                )
-            else:
-                recommendations.append(
-                    f"↑ Comprar {row['category']} ({row['deviation']:.0f}% abaixo da meta)"
-                )
-
-    worst = max(rows, key=lambda r: abs(r["deviation"]))
-    return {
-        "rows": rows,
-        "recommendations": recommendations,
-        "imbalance": {"category": worst["category"], "pct": worst["deviation"]},
-    }
 
 
 def _build_targets_panel_html(type_totals: dict, targets: dict) -> str:
@@ -277,10 +200,204 @@ def _build_analysis_html(analysis: dict | None) -> str:
     )
 
 
-def generate_html(investments: list, output_path: str, diff: dict | None = None, targets: dict | None = None) -> str:
+def _delta_class(value: float | None) -> str:
+    return "neutral" if not value else ("positive" if value > 0 else "negative")
+
+
+def _build_performance_html(perf: dict | None) -> str:
+    if not perf or perf.get("error") or not perf.get("portfolio"):
+        return ""
+    pf, bench, period = perf["portfolio"], perf.get("benchmarks"), perf["period"]
+    f0 = parse_ts(period["from"]).strftime("%d/%m/%Y")
+    f1 = parse_ts(period["to"]).strftime("%d/%m/%Y")
+    stats = [("Rentabilidade", percent_or_unknown(pf["rate"]), _delta_class(pf["rate"])),
+             ("Anualizada", percent_or_unknown(pf["annualized_rate"]), _delta_class(pf["annualized_rate"])),
+             ("Rendimento", format_currency(pf["profit"]), _delta_class(pf["profit"])),
+             ("Aportes líquidos", format_currency(pf["net_flow"]), "neutral")]
+    if bench:
+        stats += [("CDI no período", percent_or_unknown(bench["cdi_pct"]), "neutral"),
+                  ("% do CDI", percent_or_unknown(pf.get("pct_of_cdi")), "neutral"),
+                  ("Real (acima do IPCA)", percent_or_unknown(pf.get("real_rate")), _delta_class(pf.get("real_rate")))]
+    stats_html = "".join(f'<div class="stat"><div class="label">{_e(k)}</div><div class="stat-value {c}">{_e(v)}</div></div>'
+                         for k, v, c in stats)
+    rows = "".join(
+        f'<tr><td>{_e(r["name"])}</td><td class="number">{format_currency(r["v1"])}</td>'
+        f'<td class="number {_delta_class(r["profit"])}">{format_currency(r["profit"])}</td>'
+        f'<td class="number">{_e(percent_or_unknown(r["rate"]))}</td></tr>' for r in perf["by_category"])
+    notes = "".join(f"<li>{_e(c)}</li>" for c in perf["caveats"])
+    return ('<div class="panel-box"><h2>Rentabilidade no período</h2>'
+            f'<p class="panel-sub">{f0} a {f1} ({period["days"]:.0f} dias) — separa rendimento de aportes e resgates</p>'
+            f'<div class="stats">{stats_html}</div>'
+            '<table class="mini-table"><thead><tr><th>Categoria</th><th class="number">Valor atual</th>'
+            '<th class="number">Rendimento</th><th class="number">Rentab.</th></tr></thead>'
+            f'<tbody>{rows}</tbody></table><ul class="panel-notes">{notes}</ul></div>')
+
+
+def _build_rebalance_html(reb: dict | None) -> str:
+    if not reb:
+        return ""
+    parts = []
+    plan = reb.get("plan")
+    if plan:
+        if plan["actions"]:
+            items = "".join(
+                f'<li><span class="pill {"pill-buy" if a["action"] == "comprar" else "pill-sell"}">'
+                f'{_e(a["action"].capitalize())}</span> {_e(a["category"])}: <strong>{format_currency(a["amount"])}</strong></li>'
+                for a in plan["actions"])
+        else:
+            items = "<li>Sem movimentações: informe um aporte ou permita vendas.</li>"
+        mode = "compras e vendas" if plan["allow_sell"] else "somente aporte (sem vender)"
+        minimum = ""
+        if plan.get("min_aporte_no_sell") is not None:
+            minimum = f'<p class="panel-sub">Aporte mínimo para atingir todas as metas sem vender: <strong>{format_currency(plan["min_aporte_no_sell"])}</strong></p>'
+        notes = "".join(f"<li>{_e(n)}</li>" for n in plan["notes"])
+        parts.append(f'<h3>Movimentações sugeridas ({_e(mode)}; aporte {format_currency(plan["aporte"])})</h3>'
+                     f'<ul class="action-list">{items}</ul>{minimum}<ul class="panel-notes">{notes}</ul>')
+    if reb.get("indexers"):
+        rows = "".join(f'<tr><td>{_e(r["indexer"])}</td><td class="number">{format_currency(r["value"])}</td>'
+                       f'<td class="number">{format_percentage(r["pct"])}</td></tr>' for r in reb["indexers"])
+        parts.append('<h3>Renda fixa por indexador</h3><table class="mini-table"><thead><tr><th>Indexador</th>'
+                     '<th class="number">Valor</th><th class="number">% da renda fixa</th></tr></thead>'
+                     f'<tbody>{rows}</tbody></table>')
+    mats = reb.get("maturities") or {}
+    if any(mats.values()):
+        rows = ""
+        for key, title in (("overdue", "Vencido"), ("next_30", "Até 30 dias"), ("next_90", "31 a 90 dias")):
+            for m in mats.get(key, []):
+                rows += (f'<tr><td>{_e(title)}</td><td>{_e(m["name"])}</td><td>{_e(m["institution"])}</td>'
+                         f'<td>{_e(format_date(m["date"]))}</td><td class="number">{format_currency(m["value"])}</td></tr>')
+        parts.append('<h3>Calendário de vencimentos</h3><table class="mini-table"><thead><tr><th>Prazo</th><th>Ativo</th>'
+                     '<th>Instituição</th><th>Data</th><th class="number">Valor</th></tr></thead>'
+                     f'<tbody>{rows}</tbody></table>')
+    if reb.get("alerts"):
+        items = "".join(f'<li><span class="sev sev-{_e(a["severity"].replace("ç", "c").replace("ã", "a"))}">{_e(a["severity"])}</span> {_e(a["message"])}</li>'
+                        for a in reb["alerts"])
+        parts.append(f'<h3>Alertas</h3><ul class="alert-list">{items}</ul>')
+    if not parts:
+        return ""
+    return ('<div class="panel-box"><h2>Rebalanceamento e alertas</h2>' + "".join(parts) +
+            '<p class="panel-disclaimer">Sugestões por classe de ativo, sem considerar seu perfil, impostos ou liquidez. '
+            'Não constituem recomendação de investimento.</p></div>')
+
+
+def _is_redeemed(inv: dict) -> bool:
+    """Fully withdrawn positions carry no balance; the assets table hides them."""
+    return inv.get("status") == "TOTAL_WITHDRAWAL" and not (inv.get("value") or 0)
+
+
+def _group_key(inv: dict) -> tuple:
+    return (inv.get("type"), inv.get("subtype"), inv.get("name"), inv.get("issuer"),
+            inv.get("institution"), inv.get("rate_type"), inv.get("rate"), inv.get("fixed_annual_rate"))
+
+
+def group_assets(investments: list) -> list[list[dict]]:
+    """Group lots of the same asset (same name, issuer, institution and rate) so repeated
+    purchases show as one line. Redeemed positions are dropped. Order is first-seen."""
+    groups: dict[tuple, list[dict]] = {}
+    for inv in investments:
+        if _is_redeemed(inv):
+            continue
+        groups.setdefault(_group_key(inv), []).append(inv)
+    return list(groups.values())
+
+
+def _sum_or_unknown(values: list) -> tuple[float | None, bool]:
+    """Sum of known values and whether every lot was known (None when none were)."""
+    known = [v for v in values if v is not None]
+    return (sum(known) if known else None), len(known) == len(values)
+
+
+def _money_cell(total: float | None, complete: bool, klass: str = "") -> str:
+    if total is None:
+        return f'<td class="number neutral" data-sort="">{_e("não informado")}</td>'
+    text = format_currency(total) + ("" if complete else " (parcial)")
+    return f'<td class="number {klass}" data-sort="{total}">{_e(text)}</td>'
+
+
+def _asset_row(inv: dict, asset_delta, lot: bool = False) -> str:
+    ad_str, ad_class = format_delta(asset_delta) if asset_delta is not None else ("—", "neutral")
+    maturity, maturity_sort = format_date(inv.get("maturity_date")), (inv.get("maturity_date") or "")[:10]
+    type_code = inv.get("type", "OTHER") or "OTHER"
+    value = inv.get("value", 0) or 0
+    cost, profit = inv.get("amount"), profit_of(inv)
+    cost_str = format_currency(cost) if cost is not None else "não informado"
+    profit_str = format_currency(profit) if profit is not None else "não informado"
+    if lot:
+        issue = format_date(inv.get("issue_date")) if inv.get("issue_date") else "—"
+        name_cell = f'<td class="lot-name" data-sort="">Lote emitido em {_e(issue)}</td>'
+        inst_cell, type_cell = "<td></td>", "<td></td>"
+        row_open = '<tr class="lot-row">'
+    else:
+        name_cell = f'<td>{_e(inv.get("name") or "-")}</td>'
+        inst_cell = f'<td>{_e(inv.get("institution") or "-")}</td>'
+        type_cell = f'<td><span class="badge badge-{_e(type_code.lower())}">{_e(get_type_label(type_code))}</span></td>'
+        row_open = "<tr>"
+    return f"""
+        {row_open}
+          {name_cell}
+          {inst_cell}
+          {type_cell}
+          <td class="number" data-sort="{value}">{format_currency(value)}</td>
+          <td class="number {'neutral' if cost is None else ''}" data-sort="{'' if cost is None else cost}">{_e(cost_str)}</td>
+          <td class="number {_delta_class(profit)}" data-sort="{'' if profit is None else profit}">{_e(profit_str)}</td>
+          <td class="number {ad_class}" data-sort="{asset_delta if asset_delta is not None else ''}">{_e(ad_str)}</td>
+          <td data-sort="{_e(maturity_sort)}">{_e(maturity)}</td>
+        </tr>"""
+
+
+def _group_row(lots: list[dict], asset_deltas: dict) -> str:
+    first = lots[0]
+    type_code = first.get("type", "OTHER") or "OTHER"
+    value = sum(l.get("value", 0) or 0 for l in lots)
+    cost, cost_all = _sum_or_unknown([l.get("amount") for l in lots])
+    profit, profit_all = _sum_or_unknown([profit_of(l) for l in lots])
+    deltas = [asset_deltas[l.get("id", "")] for l in lots if l.get("id", "") in asset_deltas]
+    delta = sum(deltas) if deltas else None
+    ad_str, ad_class = format_delta(delta) if delta is not None else ("—", "neutral")
+    maturities = sorted((l.get("maturity_date") or "")[:10] for l in lots if l.get("maturity_date"))
+    maturity_sort = maturities[0] if maturities else ""
+    maturity = format_date(maturity_sort) if maturity_sort else format_date(None)
+    maturity_title = ""
+    if len(set(maturities)) > 1:
+        maturity_title = f' title="{_e("Vencimentos de " + format_date(maturities[0]) + " a " + format_date(maturities[-1]))}"'
+    name = first.get("name") or "-"
+    head = f"""
+        <tr class="group-main">
+          <td data-sort="{_e(name)}"><button type="button" class="lot-toggle" aria-expanded="false" onclick="toggleLots(this)">▸</button>{_e(name)} <span class="lot-count">({len(lots)} lotes)</span></td>
+          <td>{_e(first.get("institution") or "-")}</td>
+          <td><span class="badge badge-{_e(type_code.lower())}">{_e(get_type_label(type_code))}</span></td>
+          <td class="number" data-sort="{value}">{format_currency(value)}</td>
+          {_money_cell(cost, cost_all)}
+          {_money_cell(profit, profit_all, _delta_class(profit))}
+          <td class="number {ad_class}" data-sort="{delta if delta is not None else ''}">{_e(ad_str)}</td>
+          <td data-sort="{_e(maturity_sort)}"{maturity_title}>{_e(maturity)}</td>
+        </tr>"""
+    lot_rows = "".join(_asset_row(l, asset_deltas.get(l.get("id", "")), lot=True)
+                       for l in sorted(lots, key=lambda l: l.get("maturity_date") or ""))
+    return f'<tbody class="asset-group">{head}{lot_rows}</tbody>'
+
+
+def build_assets_table_body(investments: list, asset_deltas: dict) -> tuple[str, dict]:
+    """One <tbody> per line so a group and its lots sort together. Returns the HTML and counts."""
+    ordered = sorted(group_assets(investments),
+                     key=lambda g: (get_type_label(g[0].get("type", "OTHER") or "OTHER"), g[0].get("name") or ""))
+    body = ""
+    for lots in ordered:
+        if len(lots) == 1:
+            body += f'<tbody class="asset-group">{_asset_row(lots[0], asset_deltas.get(lots[0].get("id", "")))}</tbody>'
+        else:
+            body += _group_row(lots, asset_deltas)
+    redeemed = sum(1 for i in investments if _is_redeemed(i))
+    return body, {"lines": len(ordered), "redeemed": redeemed,
+                  "grouped": sum(len(g) for g in ordered if len(g) > 1)}
+
+
+def generate_html(investments: list, output_path: str, diff: dict | None = None, targets: dict | None = None,
+                  performance: dict | None = None, rebalance: dict | None = None) -> str:
     investments = investments_list(investments)
 
     total_current = sum(i.get("value", 0) or 0 for i in investments)
+    cov = coverage(investments)
 
     first_run = diff.get("first_run", True) if diff else True
     prev_ts_str = ""
@@ -288,10 +405,9 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     if diff and not first_run:
         prev_ts = diff.get("previous_timestamp", "")
         try:
-            dt = datetime.fromisoformat(prev_ts)
-            prev_ts_str = dt.strftime("%d/%m/%Y às %H:%M")
-        except (ValueError, TypeError):
-            prev_ts_str = prev_ts
+            prev_ts_str = parse_ts(prev_ts).strftime("%d/%m/%Y às %H:%M")
+        except (ValueError, TypeError, AttributeError):
+            prev_ts_str = prev_ts or ""
         total_delta = diff.get("totals", {}).get("current", {}).get("delta", 0)
 
     asset_deltas = build_asset_deltas(diff)
@@ -306,49 +422,45 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     targets_panel_html = _build_targets_panel_html(type_totals, targets)
     analysis_html = _build_analysis_html(analysis)
     allocation_breakdown_html = _build_allocation_breakdown_html(type_totals, total_current)
+    performance_html = _build_performance_html(performance)
+    rebalance_html = _build_rebalance_html(rebalance)
 
     type_labels_js = json.dumps(list(type_totals.keys())).replace("<", "\\u003c")
     type_values_js = json.dumps([round(v, 2) for v in type_totals.values()])
     total_value_js = json.dumps(round(total_current, 2))
 
-    snap_labels, snap_values = load_snapshots_series()
-    snap_labels_js = json.dumps(snap_labels)
-    snap_values_js = json.dumps(snap_values)
-
     snap_series_full = load_snapshots_series_full()
     snap_series_full_js = json.dumps(snap_series_full)
 
-    history_snapshots = load_all_snapshots()
+    # The snapshot written by this run (same timestamp as the diff) is not "previous".
+    history_snapshots = load_all_snapshots(diff.get("current_timestamp") if diff else None)
     history_js = json.dumps(history_snapshots).replace("<", "\\u003c")
     history_count = len(history_snapshots)
 
     delta_str, delta_class = format_delta(total_delta)
     avanco_label = f"Avanço desde {prev_ts_str}" if prev_ts_str else "Avanço"
-    avanco_note = f"desde {prev_ts_str}" if prev_ts_str else "primeira execução"
+    avanco_note = f"desde {prev_ts_str} (inclui aportes e resgates)" if prev_ts_str else "primeira execução"
 
-    rows_html = ""
-    for inv in sorted(investments, key=lambda x: (get_type_label(x.get("type", "OTHER") or "OTHER"), x.get("name") or "")):
-        inv_id = inv.get("id", "")
-        asset_delta = asset_deltas.get(inv_id)
-        if asset_delta is not None:
-            ad_str, ad_class = format_delta(asset_delta)
-        else:
-            ad_str, ad_class = "—", "neutral"
+    if cov["known_count"]:
+        scope = "" if cov["complete"] else f"{cov['known_count']} de {cov['count']} ativos com custo informado"
+        invested_str, invested_note = format_currency(cov["invested"]), scope or "custo original"
+        return_str = f"{format_currency(cov['return_amount'])} ({percent_or_unknown(cov['return_rate'])})"
+        return_class, return_note = _delta_class(cov["return_amount"]), scope or "desde a aplicação"
+    else:
+        invested_str = return_str = "não informado"
+        invested_note = return_note = "sem custo informado pelas instituições"
+        return_class = "neutral"
 
-        maturity = format_date(inv.get("maturity_date"))
-        type_code = inv.get("type", "OTHER") or "OTHER"
-        rows_html += f"""
-        <tr>
-          <td>{_e(inv.get("name") or "-")}</td>
-          <td>{_e(inv.get("institution") or "-")}</td>
-          <td><span class="badge badge-{_e(type_code.lower())}">{_e(get_type_label(type_code))}</span></td>
-          <td class="number">{format_currency(inv.get("value", 0) or 0)}</td>
-          <td class="number {ad_class}">{_e(ad_str)}</td>
-          <td>{_e(maturity)}</td>
-        </tr>"""
+    rows_html, table_stats = build_assets_table_body(investments, asset_deltas)
 
     n = len(investments)
     asset_word = "ativo" if n == 1 else "ativos"
+    title_parts = [f"{n} {asset_word}"]
+    if table_stats["redeemed"]:
+        title_parts.append(f'{table_stats["redeemed"]} resgatados ocultos')
+    if table_stats["grouped"]:
+        title_parts.append(f'{table_stats["grouped"]} lotes agrupados')
+    assets_title = " · ".join(title_parts)
     generation_date = datetime.now().strftime("%d/%m/%Y às %H:%M")
 
     html = f"""<!DOCTYPE html>
@@ -408,6 +520,11 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     }}
     thead th:hover {{ color: #1a1a2e; }}
     tbody tr:hover {{ background: #f9fafb; }}
+    .lot-row {{ display: none; background: #fafbfc; font-size: 0.9em; }}
+    .asset-group.open .lot-row {{ display: table-row; }}
+    .lot-name {{ padding-left: 36px !important; color: #6b7280; }}
+    .lot-count {{ color: #6b7280; font-size: 0.85em; }}
+    .lot-toggle {{ border: 0; background: none; cursor: pointer; font-size: 0.9em; width: 20px; color: #6b7280; }}
     tbody td {{ padding: 10px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }}
     .number {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
     .positive {{ color: #16a34a; font-weight: 600; }}
@@ -523,6 +640,27 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
       background: #0f172a; border-radius: 8px; padding: 10px 14px;
       font-size: 0.85rem; color: #f59e0b; font-weight: 600;
     }}
+    .panel-box {{
+      background: #fff; border-radius: 12px; padding: 20px 24px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 28px;
+    }}
+    .panel-box h2 {{ font-size: 0.9rem; font-weight: 600; color: #444; margin-bottom: 6px; }}
+    .panel-box h3 {{ font-size: 0.82rem; font-weight: 600; color: #666; margin: 18px 0 8px; }}
+    .panel-sub {{ font-size: 0.8rem; color: #888; margin-bottom: 12px; }}
+    .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }}
+    .stat {{ background: #f9fafb; border-radius: 8px; padding: 10px 14px; }}
+    .stat .label {{ font-size: 0.7rem; color: #888; text-transform: uppercase; letter-spacing: .05em; }}
+    .stat-value {{ font-size: 1.1rem; font-weight: 700; margin-top: 4px; }}
+    .mini-table {{ font-size: 0.83rem; }}
+    .mini-table th {{ cursor: default; }}
+    .panel-notes, .action-list, .alert-list {{ margin: 10px 0 0 18px; font-size: 0.8rem; color: #666; line-height: 1.6; }}
+    .action-list, .alert-list {{ list-style: none; margin-left: 0; font-size: 0.87rem; color: #1a1a2e; }}
+    .action-list li, .alert-list li {{ padding: 4px 0; }}
+    .sev {{ display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; margin-right: 6px; }}
+    .sev-alto {{ background: #fee2e2; color: #b91c1c; }}
+    .sev-atencao {{ background: #fef3c7; color: #92400e; }}
+    .sev-info {{ background: #e0f2fe; color: #0369a1; }}
+    .panel-disclaimer {{ font-size: 0.72rem; color: #9ca3af; margin-top: 16px; }}
     @media print {{
       body {{ background: #fff; padding: 8px; }}
       .print-btn {{ display: none; }}
@@ -602,6 +740,16 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
         <div class="value {delta_class}" id="avanco-value">{_e(delta_str)}</div>
         <div class="note" id="avanco-note">{_e(avanco_note)}</div>
       </div>
+      <div class="card">
+        <div class="label">Total Investido</div>
+        <div class="value {"neutral" if cov["known_count"] == 0 else ""}">{_e(invested_str)}</div>
+        <div class="note">{_e(invested_note)}</div>
+      </div>
+      <div class="card">
+        <div class="label">Rendimento Total</div>
+        <div class="value {return_class}">{_e(return_str)}</div>
+        <div class="note">{_e(return_note)}</div>
+      </div>
     </div>
 
     <div class="charts">
@@ -620,7 +768,7 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     {targets_panel_html}
 
     <div class="table-box">
-      <h2>Ativos ({n} {asset_word})</h2>
+      <h2>Ativos ({assets_title})</h2>
       <table id="assetsTable">
         <thead>
           <tr>
@@ -628,16 +776,21 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
             <th onclick="sortTable(1)">Instituição ↕</th>
             <th onclick="sortTable(2)">Tipo ↕</th>
             <th onclick="sortTable(3)" style="text-align:right">Valor Atual ↕</th>
-            <th onclick="sortTable(4)" style="text-align:right">Avanço ↕</th>
-            <th onclick="sortTable(5)">Vencimento ↕</th>
+            <th onclick="sortTable(4)" style="text-align:right">Custo ↕</th>
+            <th onclick="sortTable(5)" style="text-align:right">Rendimento ↕</th>
+            <th onclick="sortTable(6)" style="text-align:right">Avanço ↕</th>
+            <th onclick="sortTable(7)">Vencimento ↕</th>
           </tr>
         </thead>
-        <tbody>{rows_html}
-        </tbody>
+        {rows_html}
       </table>
     </div>
 
     {analysis_html}
+
+    {performance_html}
+
+    {rebalance_html}
 
     <button class="print-btn" onclick="window.print()">Imprimir / Salvar como PDF</button>
 
@@ -680,13 +833,23 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
       }}
     }});
 
+    const SNAP_SERIES_FULL = {snap_series_full_js};
+    const DELETED_KEY      = 'pluggy_deleted_snapshots';
+    function getDeleted() {{
+      try {{ return new Set(JSON.parse(localStorage.getItem(DELETED_KEY) || '[]')); }} catch(e) {{ return new Set(); }}
+    }}
+    function seriesPoints() {{
+      const deleted = getDeleted();
+      return SNAP_SERIES_FULL.filter(s => !deleted.has(s.timestamp)).map(s => ({{x: s.x, y: s.value}}));
+    }}
+    const fmtDate = ms => new Date(ms).toLocaleDateString('pt-BR');
+
     const lineChartInstance = createChart(document.getElementById('lineChart'), {{
       type: 'line',
       data: {{
-        labels: {snap_labels_js},
         datasets: [{{
           label: 'Valor Total',
-          data: {snap_values_js},
+          data: seriesPoints(),
           borderColor: '#3b82f6',
           backgroundColor: 'rgba(59,130,246,0.08)',
           borderWidth: 2,
@@ -698,13 +861,20 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
       }},
       options: {{
         responsive: true, maintainAspectRatio: true,
-        plugins: {{ legend: {{ display: false }} }},
+        plugins: {{
+          legend: {{ display: false }},
+          tooltip: {{ callbacks: {{ title: items => items.length ? new Date(items[0].parsed.x).toLocaleString('pt-BR') : '' }} }}
+        }},
         scales: {{
           y: {{
             ticks: {{ callback: v => 'R$ ' + v.toLocaleString('pt-BR') }},
             grid: {{ color: '#f0f0f0' }}
           }},
-          x: {{ grid: {{ display: false }} }}
+          x: {{
+            type: 'linear',
+            ticks: {{ maxTicksLimit: 6, callback: v => fmtDate(v) }},
+            grid: {{ display: false }}
+          }}
         }}
       }}
     }});
@@ -712,16 +882,9 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     // ── Histórico de relatórios ──────────────────────────────────────────────
     const TOTAL_VAL        = {total_value_js};
     const HISTORY          = {history_js};
-    const SNAP_SERIES_FULL = {snap_series_full_js};
-    const DELETED_KEY      = 'pluggy_deleted_snapshots';
-
     function fmtBRL(v) {{
       const sign = v < 0 ? '-R$ ' : 'R$ ';
       return sign + Math.abs(v).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
-    }}
-
-    function getDeleted() {{
-      try {{ return new Set(JSON.parse(localStorage.getItem(DELETED_KEY) || '[]')); }} catch(e) {{ return new Set(); }}
     }}
 
     function visibleHistory() {{
@@ -798,10 +961,7 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     }}
 
     function rebuildLineChart() {{
-      const deleted = getDeleted();
-      const visible = SNAP_SERIES_FULL.filter(s => !deleted.has(s.timestamp));
-      lineChartInstance.data.labels = visible.map(s => s.label);
-      lineChartInstance.data.datasets[0].data = visible.map(s => s.value);
+      lineChartInstance.data.datasets[0].data = seriesPoints();
       lineChartInstance.update();
     }}
 
@@ -847,20 +1007,34 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
 
     // ── Ordenação da tabela de ativos ────────────────────────────────────────
     let _sortDir = {{}};
-    function sortTable(col) {{
-      const tbody = document.querySelector('#assetsTable tbody');
-      const rows = [...tbody.querySelectorAll('tr')];
-      _sortDir[col] = !_sortDir[col];
-      rows.sort((a, b) => {{
-        const av = a.cells[col].textContent.trim();
-        const bv = b.cells[col].textContent.trim();
-        const an = parseFloat(av.replace(/[^\\d,\\-]/g, '').replace('.', '').replace(',', '.'));
-        const bn = parseFloat(bv.replace(/[^\\d,\\-]/g, '').replace('.', '').replace(',', '.'));
-        if (!isNaN(an) && !isNaN(bn)) return _sortDir[col] ? an - bn : bn - an;
-        return _sortDir[col] ? av.localeCompare(bv, 'pt-BR') : bv.localeCompare(av, 'pt-BR');
-      }});
-      rows.forEach(r => tbody.appendChild(r));
+    function toggleLots(btn) {{
+      const tb = btn.closest('tbody');
+      const open = tb.classList.toggle('open');
+      btn.textContent = open ? '▾' : '▸';
+      btn.setAttribute('aria-expanded', open);
     }}
+
+    function sortTable(col) {{
+      const table = document.getElementById('assetsTable');
+      // Each tbody is one line (a group keeps its lots); the first row carries the sort cells.
+      const bodies = [...table.querySelectorAll('tbody.asset-group')];
+      _sortDir[col] = !_sortDir[col];
+      // Cells carry data-sort with the raw value (signed numbers, ISO dates); empty means unknown.
+      const key = cell => cell.dataset.sort !== undefined ? cell.dataset.sort : cell.textContent.trim();
+      bodies.sort((a, b) => {{
+        const av = key(a.rows[0].cells[col]), bv = key(b.rows[0].cells[col]);
+        const an = av === '' ? NaN : Number(av), bn = bv === '' ? NaN : Number(bv);
+        let cmp;
+        if (!isNaN(an) && !isNaN(bn)) cmp = an - bn;
+        else if (av === '' || bv === '') cmp = av === bv ? 0 : (av === '' ? -1 : 1);
+        else cmp = av.localeCompare(bv, 'pt-BR');
+        return _sortDir[col] ? cmp : -cmp;
+      }});
+      bodies.forEach(tb => table.appendChild(tb));
+    }}
+
+    // Snapshots hidden in earlier sessions must also be hidden in the first paint.
+    if (getDeleted().size) {{ updateAvanco(); }}
 
     function toggleTargets() {{
       const panel = document.getElementById('targetsPanel');
@@ -913,43 +1087,45 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     return output_path
 
 
+def _load_optional_json(path: str | None, label: str) -> dict | None:
+    if not path:
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        print(f"Aviso: {label} ilegível em {path}; seção omitida.", file=sys.stderr)
+        return None
+    return data if isinstance(data, dict) else None
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: generate_report.py <investments.json> [output.html] [--diff diff.json]", file=sys.stderr)
-        sys.exit(1)
+    import argparse
 
-    json_path = sys.argv[1]
-    output_path = "relatorio.html"
-    diff_path = None
-
-    args = sys.argv[2:]
-    positional = []
-    i = 0
-    while i < len(args):
-        if args[i] == "--diff" and i + 1 < len(args):
-            diff_path = args[i + 1]
-            i += 2
-        else:
-            positional.append(args[i])
-            i += 1
-    if positional:
-        output_path = positional[0]
+    parser = argparse.ArgumentParser(description="Gera o relatório HTML da carteira.")
+    parser.add_argument("investments", help="investments.json normalizado")
+    parser.add_argument("output", nargs="?", default="relatorio.html")
+    parser.add_argument("--diff", help="diff.json de snapshot_diff.py")
+    parser.add_argument("--performance", help="JSON de performance.py --json")
+    parser.add_argument("--rebalance", help="JSON de rebalance.py --json")
+    args = parser.parse_args()
 
     try:
-        with open(json_path, "r", encoding="utf-8") as f:
+        with open(args.investments, "r", encoding="utf-8") as f:
             data = json.load(f)
     except FileNotFoundError:
-        print(f"Erro: arquivo não encontrado: {json_path}", file=sys.stderr)
+        print(f"Erro: arquivo não encontrado: {args.investments}", file=sys.stderr)
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f"Erro: JSON inválido em {json_path}: {e}", file=sys.stderr)
+        print(f"Erro: JSON inválido em {args.investments}: {e}", file=sys.stderr)
         sys.exit(1)
 
     try:
         investments = investments_list(data)
-        diff = load_diff(diff_path)
-        targets = load_targets()
-        result = generate_html(investments, output_path, diff, targets=targets)
+        migrate_legacy()
+        result = generate_html(investments, args.output, load_diff(args.diff), targets=load_targets(),
+                               performance=_load_optional_json(args.performance, "performance"),
+                               rebalance=_load_optional_json(args.rebalance, "rebalance"))
     except (ValueError, OSError) as exc:
         print(f"Erro no relatório: {exc}", file=sys.stderr)
         sys.exit(1)
