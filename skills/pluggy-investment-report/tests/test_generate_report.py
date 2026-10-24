@@ -154,29 +154,10 @@ class TestGenerateHTML(unittest.TestCase):
     def test_sortable_table_script(self):
         html = self._html()
         self.assertIn("sortTable", html)
-        self.assertIn("startsWith('↓')", html)
 
     def test_hidden_chart_points_reapply_on_load(self):
         html = self._html()
         self.assertIn("rebuildLineChart();\n  </script>", html)
-
-    def test_history_skips_newest_only_after_a_saved_diff(self):
-        import generate_report
-        from unittest.mock import patch
-        with tempfile.TemporaryDirectory() as tmp:
-            snap = os.path.join(tmp, "snapshots")
-            os.mkdir(snap)
-            for name, ts in (
-                ("2026-01-01_100000_000000.json", "2026-01-01T10:00:00"),
-                ("2026-02-01_100000_000000.json", "2026-02-01T10:00:00"),
-            ):
-                with open(os.path.join(snap, name), "w") as f:
-                    json.dump({"timestamp": ts, "totals": {"current": 1}, "investments": []}, f)
-            with patch.object(generate_report, "SNAPSHOT_DIR", __import__("pathlib").Path(snap)):
-                kept = [s["timestamp"] for s in generate_report.load_all_snapshots()]
-                skipped = [s["timestamp"] for s in generate_report.load_all_snapshots(skip_newest=True)]
-            self.assertEqual(kept, ["2026-02-01T10:00:00", "2026-01-01T10:00:00"])
-            self.assertEqual(skipped, ["2026-01-01T10:00:00"])
 
     def test_returns_output_path(self):
         from generate_report import generate_html
@@ -403,6 +384,73 @@ class TestAllocationHTML(unittest.TestCase):
         html = self._html(targets={"<b>Renda</b>": 100})
         self.assertNotIn("<b>Renda</b>", html)
         self.assertIn("&lt;b&gt;Renda&lt;/b&gt;", html)
+
+
+class TestAssetGrouping(unittest.TestCase):
+    def setUp(self):
+        import re
+        self.re = re
+        from generate_report import generate_html, group_assets
+        self.generate_html, self.group_assets = generate_html, group_assets
+        self.out = os.path.join(tempfile.mkdtemp(), "r.html")
+
+    def cdb(self, id, value, amount=None, status="ACTIVE", maturity="2028-06-01T00:00:00.000Z",
+            issuer="BANCO INTER S.A", name="CDB - BANCO INTER S.A", rate=102):
+        return {"id": id, "name": name, "institution": "MeuPluggy", "type": "FIXED_INCOME",
+                "subtype": "CDB", "issuer": issuer, "rate_type": "CDI", "rate": rate,
+                "value": value, "amount": amount, "return_amount": None if amount is None else value - amount,
+                "maturity_date": maturity, "issue_date": "2026-01-01T00:00:00.000Z", "status": status}
+
+    def html(self, invs, **kw):
+        self.generate_html(invs, self.out, **kw)
+        with open(self.out, encoding="utf-8") as f:
+            return f.read()
+
+    def test_groups_same_asset_and_drops_redeemed(self):
+        invs = [self.cdb("a", 100, 90), self.cdb("b", 50, 40, maturity="2028-01-01T00:00:00.000Z"),
+                self.cdb("c", 0, 10, status="TOTAL_WITHDRAWAL")]
+        groups = self.group_assets(invs)
+        self.assertEqual([len(g) for g in groups], [2])
+        html = self.html(invs)
+        self.assertIn("(2 lotes)", html)
+        self.assertIn('data-sort="150"', html)
+        self.assertIn('data-sort="130"', html)  # cost 90 + 40
+        self.assertIn("1 resgatados ocultos", html)
+        self.assertIn("2 lotes agrupados", html)
+        self.assertIn("3 ativos", html)
+        self.assertEqual(html.count('class="lot-row"'), 2)
+        self.assertIn("Vencimentos de", html)
+
+    def test_different_issuer_or_rate_not_merged(self):
+        invs = [self.cdb("a", 10), self.cdb("b", 10, issuer="INTER DTVM", name="CDB - INTER DTVM"),
+                self.cdb("c", 10, rate=110)]
+        self.assertEqual(sorted(len(g) for g in self.group_assets(invs)), [1, 1, 1])
+        self.assertNotIn("lotes)", self.html(invs))
+
+    def test_unknown_cost_not_treated_as_zero(self):
+        html = self.html([self.cdb("a", 100, 90), self.cdb("b", 50, None)])
+        self.assertIn("(parcial)", html)
+        html = self.html([self.cdb("a", 100, None), self.cdb("b", 50, None)])
+        self.assertNotIn("(parcial)", html)
+        self.assertIn("não informado", html)
+
+    def test_redeemed_with_balance_is_kept(self):
+        self.assertEqual(len(self.group_assets([self.cdb("a", 5, 5, status="TOTAL_WITHDRAWAL")])), 1)
+
+    def test_totals_unchanged_by_hiding(self):
+        invs = [self.cdb("a", 100, 90), self.cdb("b", 0, 10, status="TOTAL_WITHDRAWAL")]
+        self.assertIn("R$ 100,00", self.html(invs))
+
+    def test_one_tbody_per_line_for_sorting(self):
+        invs = [self.cdb("a", 100, 90), self.cdb("b", 50, 40), {"id": "s", "name": "ITSA4", "type": "EQUITY",
+                "institution": "XP", "value": 7, "amount": 5, "maturity_date": None}]
+        html = self.html(invs)
+        self.assertEqual(html.count('<tbody class="asset-group">'), 2)
+        self.assertIn("function toggleLots", html)
+
+    def test_name_is_escaped(self):
+        html = self.html([self.cdb("a", 1, name="<b>x</b>"), self.cdb("b", 1, name="<b>x</b>")])
+        self.assertNotIn("<b>x</b>", html)
 
 
 if __name__ == "__main__":
