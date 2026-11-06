@@ -11,6 +11,7 @@ TYPE_LABELS = {
     "FIXED_INCOME": "Renda Fixa", "EQUITY": "Ações", "STOCK": "Ações",
     "FUND": "Fundos", "MUTUAL_FUND": "Fundos", "ETF": "ETF",
     "TREASURY": "Tesouro Direto", "REAL_ESTATE": "FIIs", "OTHER": "Outros",
+    "SECURITY": "Previdência", "COE": "Estruturados",
 }
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent

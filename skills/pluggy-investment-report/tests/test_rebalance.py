@@ -98,6 +98,22 @@ class AlertTests(unittest.TestCase):
         self.assertFalse(any("Tesouro" in a["message"] and a["kind"] == "fgc" for a in fgc))
         self.assertTrue(any("sem emissor" in a["message"] for a in fgc))
 
+    def test_fgc_groups_conglomerates_by_cnpj_and_ignores_lig(self):
+        invs = [inv("1", 140_000, subtype="CDB", issuer="Banco A", issuer_cnpj="00.000.000/0001-00"),
+                inv("2", 120_000, subtype="LCI", issuer="Banco A S.A.", issuer_cnpj="00.000.000/0001-00"),
+                inv("3", 300_000, subtype="LIG", issuer="Banco LIG")]
+        fgc = [a["message"] for a in rebalance.build_alerts(invs, TODAY)["alerts"] if a["kind"] == "fgc"]
+        self.assertTrue(any("Banco A" in m and "260.000" in m for m in fgc))
+        self.assertEqual([m for m in fgc if "Banco A S.A." in m], [])
+        self.assertFalse(any("Banco LIG" in m for m in fgc))
+
+    def test_grace_period_alert(self):
+        invs = [inv("a", 100, grace_period_date="2026-11-01"), inv("b", 100, grace_period_date="2026-10-01")]
+        alerts = rebalance.build_alerts(invs, TODAY)["alerts"]
+        carencia = [a for a in alerts if a["kind"] == "carencia"]
+        self.assertEqual(len(carencia), 1)
+        self.assertIn("2026-11-01", carencia[0]["message"])
+
     def test_concentration_ignores_sovereign(self):
         treasury = {**inv("b", 50, subtype="TREASURY", issuer="Tesouro Nacional"), "type": "TREASURY"}
         invs = [inv("a", 50, issuer="Banco X", subtype="CDB"), treasury]

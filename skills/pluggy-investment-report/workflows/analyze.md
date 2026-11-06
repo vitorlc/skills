@@ -36,11 +36,11 @@ Ler os JSON, não recalcular. Estrutura sugerida:
    Dizer de onde veio a variação (rendimento × aportes × ativos novos/removidos).
 2. **Destaques**: categorias e ativos que mais ajudaram ou atrapalharam.
 3. **Rebalanceamento**: onde colocar o aporte (R$ por classe) e o desvio das metas.
-4. **Alertas**: FGC (limite por emissor, não por corretora), concentração, vencimentos
-   em 30 dias com sugestão de reinvestimento.
+4. **Alertas**: FGC (limite por emissor/CNPJ, não por corretora), concentração, vencimentos
+   em 30 dias com sugestão de reinvestimento e carência vigente.
 5. **Ressalvas**: usar a lista `caveats` (custo desconhecido, aportes estimados, período
    curto) e o aviso de que não é recomendação de investimento.
 
 Limites: valores da Pluggy são líquidos de impostos provisionados enquanto o CDI é bruto;
-a checagem do FGC não agrupa conglomerados; ativos novos ou removidos ficam fora da
-rentabilidade do período.
+a checagem do FGC agrupa conglomerados por CNPJ quando a Pluggy informa; ativos novos ou
+removidos ficam fora da rentabilidade do período.
