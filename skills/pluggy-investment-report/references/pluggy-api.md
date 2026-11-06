@@ -103,12 +103,13 @@ pareado: entra como saiu e entrou, sem delta inventado.
 
 Método de Dietz modificado por ativo comparável (presente nos dois instantes):
 `(V1 − V0 − F) / (V0 + Σ F·peso)`, com peso = fração do período restante após o fluxo.
-Fluxos por ativo: transações do período (BUY +, SELL e AMORTIZATION −; INTEREST e TAX
-contam como rendimento); sem transações, variação do custo original (momento desconhecido,
-peso 0,5); sem custo, nenhum fluxo (toda a variação vira rendimento). A fonte de cada
-ativo é contada em `flow_sources`. Ativos novos ou removidos ficam fora da taxa e são
-listados em `new`/`removed`; `wallet_change` reconcilia a variação do patrimônio.
-Anualização só com 30 dias ou mais.
+Fluxos por ativo: transações do período. `movementType` (`CREDIT`/`DEBIT`) manda quando
+existe; sem ele, BUY entra e SELL/AMORTIZATION/TAX saem (INTEREST conta como rendimento;
+TRANSFER sem direção é ignorada). Sem transações, variação do custo original (momento
+desconhecido, peso 0,5); sem custo, nenhum fluxo (toda a variação vira rendimento). A fonte
+de cada ativo é contada em `flow_sources` e também exposta em `source` nos melhores/piores.
+Ativos novos ou removidos ficam fora da taxa e são listados em `new`/`removed`;
+`wallet_change` reconcilia a variação do patrimônio. Anualização só com 30 dias ou mais.
 
 Benchmarks (`--benchmarks`, API pública do Banco Central, sem credenciais): CDI série 12
 (composto pelos dias do período) e IPCA série 433 (somente meses cheios dentro do período).
