@@ -52,9 +52,10 @@ informar o escopo ao usuário. Ler [contrato Pluggy](references/pluggy-api.md) q
 for necessário resolver erros, paginação ou significado dos campos.
 
 O coletor só escreve após concluir todas as páginas. Uma conexão fora do estado
-`UPDATED`, página inconsistente ou moeda não BRL interrompe a coleta. Não gerar
-relatório de uma coleta com erro. Uma conexão atualizada sem investimentos produz
-lista vazia válida. Ausência de conexões é reportada como erro.
+`UPDATED` (ou com `statusDetail.investments.isUpdated` falso), página inconsistente ou
+moeda não BRL interrompe a coleta. `--skip-stale` ignora as conexões obsoletas e lista os
+IDs em stderr. Não gerar relatório de uma coleta com erro. Uma conexão atualizada sem
+investimentos produz lista vazia válida. Ausência de conexões é reportada como erro.
 
 ## Resultados e estado
 
@@ -74,8 +75,9 @@ lista vazia válida. Ausência de conexões é reportada como erro.
 - O histórico é protegido por trava de arquivo contra execuções simultâneas. Cópias
   independentes de hosts têm históricos independentes, salvo com `PLUGGY_REPORT_DATA_DIR`.
 - Atualizações preservam `tmp/`; desinstalação remove os dados daquele destino.
-- Ordem importa: `performance.py` lê o histórico e deve rodar **antes** de
-  `snapshot_diff.py` registrar a coleta atual.
+- Ordem importa: calcular o diff com `snapshot_diff.py --no-record`, rodar
+  `performance.py`/`rebalance.py` e só então registrar a coleta com `--record-only`.
+  Nunca registrar antes da rentabilidade.
 
 Erros do coletor: `1` configuração/dados/arquivo, `2` API/rede. O diff, a rentabilidade e
 o rebalanceamento são opcionais: se falharem, continuar com o relatório atual sem essas

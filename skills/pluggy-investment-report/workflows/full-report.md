@@ -1,22 +1,25 @@
 # Relatório completo
 
 Usar `SKILL_DIR` e `RUN_DIR` preparados no `SKILL.md`, após coleta bem-sucedida.
-Os comandos relacionados devem executar no mesmo shell. A ordem importa: rentabilidade e
-rebalanceamento leem o histórico **antes** de `snapshot_diff.py` registrar a coleta atual.
+Os comandos relacionados devem executar no mesmo shell. A ordem importa: o diff é calculado
+com `--no-record`, rentabilidade e rebalanceamento leem o histórico ainda intacto, e só no
+fim a coleta atual é registrada. Assim, inverter a ordem não contamina a baseline.
 
 ```bash
 S="$SKILL_DIR/scripts"; I="$RUN_DIR/investments.json"
 python3 "$S/summary.py" "$I" || exit 1
 EXTRA=()
-python3 "$S/performance.py" "$I" --since 30d --json "$RUN_DIR/performance.json" >/dev/null \
-  && EXTRA+=(--performance "$RUN_DIR/performance.json") || echo 'Sem rentabilidade no período.'
-python3 "$S/rebalance.py" "$I" --json "$RUN_DIR/rebalance.json" >/dev/null \
-  && EXTRA+=(--rebalance "$RUN_DIR/rebalance.json") || echo 'Sem rebalanceamento.'
-if python3 "$S/snapshot_diff.py" "$I" "$RUN_DIR/diff.json"; then
+if python3 "$S/snapshot_diff.py" "$I" "$RUN_DIR/diff.json" --no-record; then
   EXTRA+=(--diff "$RUN_DIR/diff.json")
 else
   echo 'Sem evolução: o diff falhou.'
 fi
+python3 "$S/performance.py" "$I" --since 30d --json "$RUN_DIR/performance.json" >/dev/null \
+  && EXTRA+=(--performance "$RUN_DIR/performance.json") || echo 'Sem rentabilidade no período.'
+python3 "$S/rebalance.py" "$I" --json "$RUN_DIR/rebalance.json" >/dev/null \
+  && EXTRA+=(--rebalance "$RUN_DIR/rebalance.json") || echo 'Sem rebalanceamento.'
+python3 "$S/snapshot_diff.py" "$I" --record-only \
+  || echo 'Não foi possível registrar a observação no histórico.'
 python3 "$S/generate_report.py" "$I" relatorio.html "${EXTRA[@]}"
 ```
 
