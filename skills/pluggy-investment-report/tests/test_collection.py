@@ -93,6 +93,61 @@ class CollectionTests(unittest.TestCase):
             self.assertEqual(output.read_text(), 'previous')
 
 
+class CollectionHardeningTests(unittest.TestCase):
+    def test_transfer_without_amount_is_not_a_flow_and_keeps_history(self):
+        from collect_investments import normalize_transaction
+        tx = normalize_transaction({'date': '2026-01-02', 'tradeDate': '2026-01-01', 'type': 'TRANSFER',
+                                    'amount': None, 'movementType': 'CREDIT'})
+        self.assertEqual(tx, {'date': '2026-01-02', 'type': 'TRANSFER', 'amount': 0.0, 'movement': 'CREDIT'})
+
+    def test_date_is_preferred_and_net_amount_is_the_fallback(self):
+        from collect_investments import normalize_transaction
+        tx = normalize_transaction({'date': '2026-01-02', 'tradeDate': '2026-01-01', 'type': 'BUY',
+                                    'amount': None, 'netAmount': 12.5})
+        self.assertEqual((tx['date'], tx['amount']), ('2026-01-02', 12.5))
+
+    def test_extra_pluggy_fields_are_normalized(self):
+        row = normalize({'id': 'a', 'balance': 110, 'amountOriginal': 100, 'type': 'SECURITY',
+                         'subtype': 'RETIREMENT', 'issuerCNPJ': '00.000.000/0001-00',
+                         'gracePeriodDate': '2027-01-01', 'purchaseDate': '2025-01-01', 'taxExempt': False,
+                         'amountWithdrawal': 50, 'lastMonthRate': 1.5, 'annualRate': 8.0,
+                         'code': '123', 'isin': 'BR0000000000', 'taxes': 2.0}, 'Bank')
+        self.assertEqual(row['issuer_cnpj'], '00.000.000/0001-00')
+        self.assertEqual((row['grace_period_date'], row['purchase_date']), ('2027-01-01', '2025-01-01'))
+        self.assertIs(row['tax_exempt'], False)
+        self.assertEqual((row['amount_withdrawal'], row['last_month_rate'], row['annual_rate']), (50, 1.5, 8.0))
+        self.assertEqual((row['code'], row['isin'], row['taxes']), ('123', 'BR0000000000', 2.0))
+        investments_list([row])
+
+    def test_stale_investments_abort_unless_skip_stale(self):
+        def request(endpoint, **kwargs):
+            if endpoint == '/auth': return {'apiKey': 'key'}
+            if endpoint == '/items/stale':
+                return {'id': 'stale', 'status': 'UPDATED', 'statusDetail': {'investments': {'isUpdated': False}}}
+            if endpoint == '/items/fresh': return {'id': 'fresh', 'status': 'UPDATED'}
+            return {'results': [{'id': 'x', 'balance': 10, 'amountOriginal': 10, 'type': 'FIXED_INCOME'}], 'total': 1}
+
+        with self.assertRaises(ApiError):
+            collect('id', 'secret', ['stale'], request)
+        skipped = []
+        rows = collect('id', 'secret', ['stale', 'fresh'], request, skip_stale=True, skipped=skipped)
+        self.assertEqual([r['id'] for r in rows], ['x'])
+        self.assertEqual(skipped, ['stale'])
+
+    def test_transient_http_errors_are_retried(self):
+        from urllib.error import HTTPError
+        from io import BytesIO
+        from collect_investments import request_json
+        with patch('collect_investments.build_opener') as opener, patch('collect_investments.time.sleep') as sleep:
+            opener.return_value.open.side_effect = [
+                HTTPError('https://api.pluggy.ai/auth', 429, 'rate limit', {}, BytesIO(b'')),
+                BytesIO(b'{"ok": true}'),
+            ]
+            self.assertEqual(request_json('/auth', payload={'clientId': 'i', 'clientSecret': 's'}), {'ok': True})
+            self.assertEqual(opener.return_value.open.call_count, 2)
+            sleep.assert_called_once()
+
+
 class ModelTests(unittest.TestCase):
     def test_rejects_bad_shapes_and_non_finite_money(self):
         for data in [None, {}, [1], [{'value': '100'}], [{'value': float('nan')}]]:
