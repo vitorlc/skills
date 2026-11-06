@@ -26,7 +26,7 @@ from report_model import (category_totals, format_currency, format_percentage, i
 
 FGC_LIMIT = 250_000.0
 FGC_WARN_RATIO = 0.8
-FGC_SUBTYPES = {"CDB", "LCI", "LCA", "LC", "LF", "LIG", "RDB"}
+FGC_SUBTYPES = {"CDB", "LCI", "LCA", "LC", "LF", "RDB"}  # LIG has its own guarantee, not FGC
 MIN_AMOUNT = 1.0  # ignore suggestions below R$ 1
 
 
@@ -107,6 +107,11 @@ def _is_sovereign(inv: dict) -> bool:
     return inv.get("type") == "TREASURY" or inv.get("subtype") == "TREASURY"
 
 
+def _issuer_key(inv: dict) -> str | None:
+    """CNPJ groups conglomerates that share the FGC limit; name is the fallback."""
+    return inv.get("issuer_cnpj") or inv.get("issuer") or None
+
+
 def indexer_label(inv: dict) -> str:
     kind = (inv.get("rate_type") or "").upper()
     if kind == "CDI":
@@ -128,15 +133,18 @@ def build_alerts(invs: list[dict], today: date | None = None, fgc_limit: float =
 
     # FGC covers the ISSUER (not the broker holding the asset), per CPF and conglomerate.
     by_issuer: dict[str, float] = {}
+    issuer_names: dict[str, str] = {}
     unknown_issuer = 0
     for i in invs:
         if (i.get("subtype") or "").upper() in FGC_SUBTYPES:
-            issuer = i.get("issuer")
-            if issuer:
-                by_issuer[issuer] = by_issuer.get(issuer, 0.0) + (i.get("value") or 0)
+            key = _issuer_key(i)
+            if key:
+                by_issuer[key] = by_issuer.get(key, 0.0) + (i.get("value") or 0)
+                issuer_names.setdefault(key, i.get("issuer") or key)
             else:
                 unknown_issuer += 1
-    for issuer, value in sorted(by_issuer.items(), key=lambda kv: kv[1], reverse=True):
+    for key, value in sorted(by_issuer.items(), key=lambda kv: kv[1], reverse=True):
+        issuer = issuer_names[key]
         if value > fgc_limit:
             alerts.append({"kind": "fgc", "severity": "alto",
                            "message": f"{issuer}: {format_currency(value)} acima do limite FGC de {format_currency(fgc_limit)} por emissor"})
@@ -149,13 +157,16 @@ def build_alerts(invs: list[dict], today: date | None = None, fgc_limit: float =
 
     if total > 0:
         issuers: dict[str, float] = {}
+        names: dict[str, str] = {}
         for i in invs:
-            if i.get("issuer") and not _is_sovereign(i):
-                issuers[i["issuer"]] = issuers.get(i["issuer"], 0.0) + (i.get("value") or 0)
-        for issuer, value in sorted(issuers.items(), key=lambda kv: kv[1], reverse=True):
+            key = _issuer_key(i)
+            if key and not _is_sovereign(i):
+                issuers[key] = issuers.get(key, 0.0) + (i.get("value") or 0)
+                names.setdefault(key, i.get("issuer") or key)
+        for key, value in sorted(issuers.items(), key=lambda kv: kv[1], reverse=True):
             if value / total * 100 > max_issuer_pct:
                 alerts.append({"kind": "concentracao", "severity": "atenção",
-                               "message": f"Emissor {issuer} concentra {value / total * 100:.1f}% da carteira (limite {max_issuer_pct:g}%)"})
+                               "message": f"Emissor {names[key]} concentra {value / total * 100:.1f}% da carteira (limite {max_issuer_pct:g}%)"})
         for i in sorted(invs, key=lambda x: x.get("value") or 0, reverse=True):
             pct = (i.get("value") or 0) / total * 100
             if pct > max_asset_pct and not _is_sovereign(i):
@@ -194,6 +205,16 @@ def build_alerts(invs: list[dict], today: date | None = None, fgc_limit: float =
     if maturities["overdue"]:
         alerts.append({"kind": "vencimento", "severity": "atenção",
                        "message": f"{len(maturities['overdue'])} ativo(s) com vencimento já passado ainda constam na carteira"})
+
+    locked = []
+    for i in invs:
+        d = _day(i.get("grace_period_date"))
+        if d and d > today:
+            locked.append({"name": i.get("name") or "-", "days": (d - today).days, "date": d.isoformat()})
+    if locked:
+        nearest = min(locked, key=lambda x: x["days"])
+        alerts.append({"kind": "carencia", "severity": "info",
+                       "message": f"{len(locked)} ativo(s) em carência; o mais próximo libera em {nearest['date']} ({nearest['days']} dias)"})
     return {"alerts": alerts, "indexers": indexer_rows, "maturities": maturities}
 
 

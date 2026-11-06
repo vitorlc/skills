@@ -70,6 +70,10 @@ class TestFormatHelpers(unittest.TestCase):
     def test_get_type_label_etf(self):
         self.assertEqual(self.get_type_label("ETF"), "ETF")
 
+    def test_get_type_label_security_and_coe(self):
+        self.assertEqual(self.get_type_label("SECURITY"), "Previdência")
+        self.assertEqual(self.get_type_label("COE"), "Estruturados")
+
     def test_get_type_label_unknown_is_other(self):
         self.assertEqual(self.get_type_label("CUSTOM_TYPE"), "Outros")
 

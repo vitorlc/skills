@@ -94,7 +94,7 @@ do snapshot gravado na execução, o que permite ao HTML omiti-lo do painel de a
 Delta entre métricas desconhecidas é `null`.
 Snapshots anteriores permanecem legíveis; métricas antigas de custo/rendimento podem
 seguir o mapeamento anterior, portanto não representam uma série recalculada.
-Metas inválidas interrompem o relatório, inclusive nome de categoria fora dos sete
+Metas inválidas interrompem o relatório, inclusive nome de categoria fora dos nove
 rótulos. Categorias da carteira omitidas nas metas entram na análise com alvo zero;
 desvios de pelo menos 2 pontos geram sugestões. Nome repetido sem id estável não é
 pareado: entra como saiu e entrou, sem delta inventado.
@@ -119,7 +119,8 @@ Cache de 12 h em `<dados>/cache/`; falhas viram notas e não interrompem a anál
 Por categoria de relatório. Padrão: só aporte, distribuído proporcionalmente à necessidade
 até as metas (sobra pelo peso das metas). `--allow-sell` vende categorias fora da banda de
 tolerância e compra o que o caixa permite. `min_aporte_no_sell` é o menor aporte que atinge
-todas as metas só com compras. Alertas: limite FGC de R$ 250 mil por **emissor** (campo
-`issuer`, subtipos CDB/LCI/LCA/LC/LF/LIG/RDB; sem agrupar conglomerados), concentração por
-emissor e por ativo (Tesouro excluído), vencimentos vencidos/30/90 dias e distribuição da
-renda fixa por indexador.
+todas as metas só com compras. Alertas: limite FGC de R$ 250 mil por **emissor** agrupado
+por `issuerCNPJ` (fallback `issuer`; subtipos CDB/LCI/LCA/LC/LF/RDB — LIG tem garantia
+própria), concentração por emissor e por ativo (Tesouro excluído), vencimentos
+vencidos/30/90 dias, carência vigente (`gracePeriodDate`) e distribuição da renda fixa por
+indexador.
