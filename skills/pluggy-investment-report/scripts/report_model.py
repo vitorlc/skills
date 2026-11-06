@@ -188,17 +188,31 @@ def validate_targets(targets):
     return targets
 
 
+def targets_path() -> Path:
+    return data_dir() / "allocation_targets.json"
+
+
+def load_targets() -> dict:
+    try:
+        with open(targets_path(), encoding="utf-8") as f:
+            return validate_targets(json.load(f))
+    except FileNotFoundError:
+        return {}
+
+
+def allocation_row(category: str, current: float, total: float, target: float) -> dict:
+    actual_pct = round(current / total * 100, 1) if total else 0.0
+    return {"category": category, "target_pct": target, "actual_pct": actual_pct,
+            "deviation": round(actual_pct - target, 1)}
+
+
 def build_allocation_analysis(type_totals: dict, targets: dict, total_current: float,
                               tolerance: float = 2.0) -> dict | None:
     if not targets or not total_current:
         return None
 
-    rows = []
-    for category in sorted(set(type_totals) | set(targets)):
-        target_pct = targets.get(category, 0)
-        actual_pct = round(type_totals.get(category, 0) / total_current * 100, 1)
-        rows.append({"category": category, "target_pct": target_pct, "actual_pct": actual_pct,
-                     "deviation": round(actual_pct - target_pct, 1)})
+    rows = [allocation_row(category, type_totals.get(category, 0), total_current, targets.get(category, 0))
+            for category in sorted(set(type_totals) | set(targets))]
     if not rows:
         return None
 

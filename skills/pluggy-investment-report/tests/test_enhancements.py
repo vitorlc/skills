@@ -241,7 +241,7 @@ class ReportHtmlTests(unittest.TestCase):
         bad = self.root / 'bad.json'
         bad.write_text('{nope')
         with patch.object(sys, 'argv', ['g', str(source), str(self.out), '--performance', str(bad), '--rebalance', str(self.root / 'missing.json')]), \
-                patch.object(generate_report, 'TARGETS_PATH', str(self.root / 'none.json')), \
+                patch.object(report_model, 'targets_path', return_value=self.root / 'none.json'), \
                 patch('builtins.print'), patch('sys.stderr'), \
                 patch.dict('sys.modules'):
             import runpy

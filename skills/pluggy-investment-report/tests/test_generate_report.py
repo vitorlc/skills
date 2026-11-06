@@ -3,6 +3,8 @@ import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
@@ -216,45 +218,33 @@ class TestCLI(unittest.TestCase):
 class TestLoadTargets(unittest.TestCase):
     def setUp(self):
         import generate_report
+        import report_model
         self.load_targets = generate_report.load_targets
-        self.module = generate_report
+        self.report_model = report_model
 
     def test_returns_empty_dict_when_file_missing(self):
-        original = self.module.TARGETS_PATH
-        try:
-            self.module.TARGETS_PATH = "/nonexistent/path/targets.json"
-            result = self.load_targets()
-            self.assertEqual(result, {})
-        finally:
-            self.module.TARGETS_PATH = original
+        with patch.object(self.report_model, 'targets_path', return_value=Path('/nonexistent/path/targets.json')):
+            self.assertEqual(self.load_targets(), {})
 
     def test_returns_data_when_file_exists(self):
-        import tempfile, pathlib
         with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
             json.dump({"Renda Fixa": 70, "Ações": 30}, f)
-            tmp = f.name
-        original = self.module.TARGETS_PATH
+            tmp = Path(f.name)
         try:
-            self.module.TARGETS_PATH = tmp
-            result = self.load_targets()
-            self.assertEqual(result, {"Renda Fixa": 70, "Ações": 30})
+            with patch.object(self.report_model, 'targets_path', return_value=tmp):
+                self.assertEqual(self.load_targets(), {"Renda Fixa": 70, "Ações": 30})
         finally:
-            self.module.TARGETS_PATH = original
-            pathlib.Path(tmp).unlink(missing_ok=True)
+            tmp.unlink(missing_ok=True)
 
     def test_rejects_invalid_targets_json(self):
-        import tempfile, pathlib
         with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
             f.write("not json")
-            tmp = f.name
-        original = self.module.TARGETS_PATH
+            tmp = Path(f.name)
         try:
-            self.module.TARGETS_PATH = tmp
-            with self.assertRaises(ValueError):
+            with patch.object(self.report_model, 'targets_path', return_value=tmp), self.assertRaises(ValueError):
                 self.load_targets()
         finally:
-            self.module.TARGETS_PATH = original
-            pathlib.Path(tmp).unlink(missing_ok=True)
+            tmp.unlink(missing_ok=True)
 
 
 class TestBuildAllocationAnalysis(unittest.TestCase):
