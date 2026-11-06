@@ -41,6 +41,15 @@ def name_key(inv: dict) -> tuple:
     return (inv.get("institution") or "", inv.get("name") or "")
 
 
+def identity_key(inv: dict) -> tuple | None:
+    """Stable asset identity, used when Pluggy rotates the investment id."""
+    if inv.get("isin"):
+        return ("isin", inv["isin"])
+    if inv.get("code"):
+        return ("code", inv["code"])
+    return None
+
+
 @contextlib.contextmanager
 def locked():
     """Serialise read-modify-write of the history across concurrent runs."""
@@ -134,8 +143,8 @@ def diff_totals(prev_tot: dict, curr_tot: dict) -> dict:
 
 
 def match_assets(prev_invs: list[dict], curr_invs: list[dict]):
-    """Match by Pluggy id, then by a unique (institution, name).
-    A repeated name is not paired: that would invent a gain after ids rotate.
+    """Match by Pluggy id, then by unique ISIN/code, then by unique (institution, name).
+    A repeated identity is not paired: that would invent a gain after ids rotate.
     Returns (pairs, unmatched_curr, unmatched_prev)."""
 
     unmatched_prev = list(prev_invs)
@@ -157,11 +166,27 @@ def match_assets(prev_invs: list[dict], curr_invs: list[dict]):
         if id_key(p) not in matched_prev_ids:
             next_unmatched_prev.append(p)
 
+    # Then by ISIN/code, but only when each side has exactly one such asset.
+    prev_by_code: dict[tuple, list[dict]] = {}
+    curr_by_code: dict[tuple, list[dict]] = {}
+    by_name_prev, by_name_curr = [], []
+    for p in next_unmatched_prev:
+        (prev_by_code.setdefault(identity_key(p), []) if identity_key(p) else by_name_prev).append(p)
+    for c in next_unmatched_curr:
+        (curr_by_code.setdefault(identity_key(c), []) if identity_key(c) else by_name_curr).append(c)
+    for key in set(prev_by_code) | set(curr_by_code):
+        prev_bucket, curr_bucket = prev_by_code.get(key, []), curr_by_code.get(key, [])
+        if len(prev_bucket) == 1 and len(curr_bucket) == 1:
+            pairs.append((prev_bucket[0], curr_bucket[0]))
+        else:
+            by_name_prev.extend(prev_bucket)
+            by_name_curr.extend(curr_bucket)
+
     prev_by_name: dict[tuple, list[dict]] = {}
     curr_by_name: dict[tuple, list[dict]] = {}
-    for p in next_unmatched_prev:
+    for p in by_name_prev:
         prev_by_name.setdefault(name_key(p), []).append(p)
-    for c in next_unmatched_curr:
+    for c in by_name_curr:
         curr_by_name.setdefault(name_key(c), []).append(c)
     final_unmatched_prev, final_unmatched_curr = [], []
     for key in set(prev_by_name) | set(curr_by_name):

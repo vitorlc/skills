@@ -96,8 +96,9 @@ Snapshots anteriores permanecem legíveis; métricas antigas de custo/rendimento
 seguir o mapeamento anterior, portanto não representam uma série recalculada.
 Metas inválidas interrompem o relatório, inclusive nome de categoria fora dos sete
 rótulos. Categorias da carteira omitidas nas metas entram na análise com alvo zero;
-desvios de pelo menos 2 pontos geram sugestões. Nome repetido sem id estável não é
-pareado: entra como saiu e entrou, sem delta inventado.
+desvios de pelo menos 2 pontos geram sugestões. O diff pareia por `id`, depois por
+`isin`/`code` únicos, depois por (instituição, nome); identidade repetida sem vínculo
+estável não é pareada: entra como saiu e entrou, sem delta inventado.
 
 ## Rentabilidade (`performance.py`)
 

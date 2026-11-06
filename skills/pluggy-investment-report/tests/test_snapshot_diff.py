@@ -130,6 +130,22 @@ class TestDiffAssets(unittest.TestCase):
         self.assertEqual(len(result["changed"]), 1, "Should match by (institution, name) when id changes")
         self.assertAlmostEqual(result["changed"][0]["value_delta"], 10)
 
+    def test_isin_or_code_matches_when_id_rotates(self):
+        prev = [{"id": "old1", "name": "Fundo Antigo", "institution": "X", "code": "00.000.000/0001-00", "value": 100}]
+        curr = [{"id": "new1", "name": "Fundo Renomeado", "institution": "Y", "code": "00.000.000/0001-00", "value": 110}]
+        result = self.diff_assets(prev, curr)
+        self.assertEqual(len(result["changed"]), 1)
+        self.assertAlmostEqual(result["changed"][0]["value_delta"], 10)
+
+    def test_repeated_code_is_not_paired(self):
+        prev = [{"id": "old1", "name": "Fundo", "institution": "X", "isin": "BR0000000001", "value": 100},
+                {"id": "old2", "name": "Fundo", "institution": "X", "isin": "BR0000000001", "value": 200}]
+        curr = [{"id": "new1", "name": "Fundo", "institution": "X", "isin": "BR0000000001", "value": 110},
+                {"id": "new2", "name": "Fundo", "institution": "X", "isin": "BR0000000001", "value": 210}]
+        result = self.diff_assets(prev, curr)
+        self.assertEqual(result["changed"], [])
+        self.assertEqual(len(result["new"]), 2)
+
     def test_empty_both_sides(self):
         result = self.diff_assets([], [])
         self.assertEqual(len(result["changed"]), 0)
