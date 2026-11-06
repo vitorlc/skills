@@ -20,9 +20,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from generate_report import load_targets
-from report_model import (category_totals, format_currency, format_percentage, investments_list,
-                          migrate_legacy, private_json)
+from report_model import (allocation_row, category_totals, format_currency, format_percentage,
+                          investments_list, load_targets, migrate_legacy, private_json)
 
 FGC_LIMIT = 250_000.0
 FGC_WARN_RATIO = 0.8
@@ -43,9 +42,7 @@ def plan_rebalance(cat_values: dict, targets: dict, aporte: float = 0.0, toleran
     for c in cats:
         cur, tgt = cat_values.get(c, 0.0), targets.get(c, 0)
         desired = tgt / 100 * new_total
-        actual_pct = cur / total * 100 if total else 0.0
-        rows.append({"category": c, "target_pct": tgt, "actual_pct": round(actual_pct, 1),
-                     "deviation": round(actual_pct - tgt, 1), "current": cur,
+        rows.append({**allocation_row(c, cur, total, tgt), "current": cur,
                      "desired": desired, "gap": desired - cur})
 
     buys: dict[str, float] = {}

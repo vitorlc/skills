@@ -5,9 +5,8 @@ import json
 import sys
 from pathlib import Path
 from report_model import (aggregate, build_allocation_analysis, category_totals, coverage, format_currency,
-                          format_percentage, investments_list, migrate_legacy, money_or_unknown,
+                          format_percentage, investments_list, load_targets, migrate_legacy, money_or_unknown,
                           percent_or_unknown)
-from generate_report import load_targets
 
 
 def summary_data(investments, targets=None):

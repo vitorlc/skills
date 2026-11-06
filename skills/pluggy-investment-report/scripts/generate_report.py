@@ -14,11 +14,9 @@ from datetime import datetime
 from pathlib import Path
 from html import escape as _e
 import snapshot_diff
-from report_model import (TYPE_LABELS, build_allocation_analysis, coverage, data_dir, format_currency,
-                          format_percentage, get_type_label, investments_list, migrate_legacy,
-                          money_or_unknown, parse_ts, percent_or_unknown, private_write, profit_of, validate_targets)
-
-TARGETS_PATH = str(data_dir() / "allocation_targets.json")
+from report_model import (TYPE_LABELS, build_allocation_analysis, coverage, format_currency,
+                          format_percentage, get_type_label, investments_list, load_targets, migrate_legacy,
+                          money_or_unknown, parse_ts, percent_or_unknown, private_write, profit_of)
 
 
 def format_delta(value: float) -> tuple[str, str]:
@@ -40,13 +38,10 @@ def format_date(value: str | None) -> str:
         return str(value)
 
 
-ALL_TYPE_LABELS = {"Renda Fixa", "Ações", "Fundos", "ETF", "Tesouro Direto", "FIIs", "Outros"}
-
-
-def load_snapshots_series_full() -> list[dict]:
+def load_snapshots_series_full(snapshots=None) -> list[dict]:
     """All snapshots oldest-first as {timestamp, x (epoch ms), label, value} for the line chart."""
     result = []
-    for snap in snapshot_diff.list_snapshots():
+    for snap in snapshots if snapshots is not None else snapshot_diff.list_snapshots():
         try:
             dt = parse_ts(snap["timestamp"])
             result.append({"timestamp": snap["timestamp"], "x": int(dt.timestamp() * 1000),
@@ -56,10 +51,10 @@ def load_snapshots_series_full() -> list[dict]:
     return result
 
 
-def load_all_snapshots(skip_timestamp: str | None = None) -> list[dict]:
+def load_all_snapshots(skip_timestamp: str | None = None, snapshots=None) -> list[dict]:
     """Snapshots newest-first for the history panel, minus the one that belongs to the current run."""
     result = []
-    for snap in reversed(snapshot_diff.list_snapshots()):
+    for snap in reversed(snapshots if snapshots is not None else snapshot_diff.list_snapshots()):
         if skip_timestamp and snap["timestamp"] == skip_timestamp:
             continue
         try:
@@ -80,14 +75,6 @@ def load_diff(path: str | None) -> dict | None:
         return None
 
 
-def load_targets() -> dict:
-    try:
-        with open(TARGETS_PATH, encoding="utf-8") as f:
-            return validate_targets(json.load(f))
-    except FileNotFoundError:
-        return {}
-
-
 def build_asset_deltas(diff: dict | None) -> dict:
     """Returns {investment_id: value_delta}. New assets get value_curr as delta."""
     if not diff or diff.get("first_run"):
@@ -103,7 +90,7 @@ def build_asset_deltas(diff: dict | None) -> dict:
 
 
 def _build_targets_panel_html(type_totals: dict, targets: dict) -> str:
-    all_cats = sorted(set(type_totals.keys()) | set(targets.keys()) | ALL_TYPE_LABELS)
+    all_cats = sorted(set(type_totals) | set(targets) | set(TYPE_LABELS.values()))
     inputs_html = ""
     for label in all_cats:
         val = targets.get(label, "")
@@ -429,11 +416,12 @@ def generate_html(investments: list, output_path: str, diff: dict | None = None,
     type_values_js = json.dumps([round(v, 2) for v in type_totals.values()])
     total_value_js = json.dumps(round(total_current, 2))
 
-    snap_series_full = load_snapshots_series_full()
+    snapshots = snapshot_diff.list_snapshots()
+    snap_series_full = load_snapshots_series_full(snapshots)
     snap_series_full_js = json.dumps(snap_series_full)
 
     # The snapshot written by this run (same timestamp as the diff) is not "previous".
-    history_snapshots = load_all_snapshots(diff.get("current_timestamp") if diff else None)
+    history_snapshots = load_all_snapshots(diff.get("current_timestamp") if diff else None, snapshots)
     history_js = json.dumps(history_snapshots).replace("<", "\\u003c")
     history_count = len(history_snapshots)
 
