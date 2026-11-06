@@ -5,12 +5,15 @@ import json
 import math
 import os
 import sys
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, quote
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from report_model import number, private_json, investments_list
 
 BASE_URL = "https://api.pluggy.ai"
+RETRY_STATUS = {429, 500, 502, 503, 504}
+RETRIES = 3
 
 
 class ApiError(RuntimeError):
@@ -31,16 +34,21 @@ def request_json(endpoint, api_key=None, payload=None):
         body = json.dumps(payload).encode()
         headers["Content-Type"] = "application/json"
     request = Request(BASE_URL + endpoint, data=body, headers=headers)
-    try:
-        with build_opener(NoRedirect).open(request, timeout=30) as response:
-            data = json.load(response)
-    except HTTPError as exc:
-        hint = " Listing items requires opt-in; use --item-id for known connections." if endpoint.startswith('/v2/items') and exc.code == 403 else ""
-        raise ApiError(f"Pluggy returned HTTP {exc.code}.{hint}") from None
-    except (URLError, TimeoutError, OSError):
-        raise ApiError("Pluggy network request failed or timed out") from None
-    except (ValueError, UnicodeError):
-        raise ApiError("Pluggy returned invalid JSON") from None
+    for attempt in range(RETRIES):
+        try:
+            with build_opener(NoRedirect).open(request, timeout=30) as response:
+                data = json.load(response)
+            break
+        except HTTPError as exc:
+            if exc.code in RETRY_STATUS and attempt + 1 < RETRIES:
+                time.sleep(2 ** attempt)
+                continue
+            hint = " Listing items requires opt-in; use --item-id for known connections." if endpoint.startswith('/v2/items') and exc.code == 403 else ""
+            raise ApiError(f"Pluggy returned HTTP {exc.code}.{hint}") from None
+        except (URLError, TimeoutError, OSError):
+            raise ApiError("Pluggy network request failed or timed out") from None
+        except (ValueError, UnicodeError):
+            raise ApiError("Pluggy returned invalid JSON") from None
     if not isinstance(data, dict):
         raise ApiError("Pluggy response must be an object")
     return data
@@ -103,11 +111,20 @@ def list_transactions(request, api_key, investment_id):
 def normalize_transaction(raw):
     if not isinstance(raw, dict):
         raise ValueError("Invalid transaction")
-    date = raw.get("tradeDate") or raw.get("date")
+    date = raw.get("date") or raw.get("tradeDate")  # date = realizada; tradeDate = liquidada
     kind = raw.get("type")
     if not isinstance(date, str) or not isinstance(kind, str):
         raise ValueError("Transaction without date or type")
-    return {"date": date, "type": kind, "amount": number(raw.get("amount"), "transaction amount")}
+    amount = raw.get("amount")
+    if amount is None:
+        amount = raw.get("netAmount")
+    if amount is None and kind == "TRANSFER":
+        amount = 0.0  # portability moves no external money
+    tx = {"date": date, "type": kind, "amount": number(amount, "transaction amount")}
+    movement = soft_text(raw.get("movementType"))
+    if movement:
+        tx["movement"] = movement
+    return tx
 
 
 def soft_number(value):
@@ -146,11 +163,27 @@ def normalize(raw, institution):
             "issuer": soft_text(raw.get("issuer")), "issue_date": soft_text(raw.get("issueDate")),
             "quantity": soft_number(raw.get("quantity")), "as_of": soft_text(raw.get("date")),
             "last_twelve_months_rate": soft_number(raw.get("lastTwelveMonthsRate")),
+            "issuer_cnpj": soft_text(raw.get("issuerCNPJ")), "grace_period_date": soft_text(raw.get("gracePeriodDate")),
+            "purchase_date": soft_text(raw.get("purchaseDate")), "tax_exempt": raw.get("taxExempt") if isinstance(raw.get("taxExempt"), bool) else None,
+            "amount_withdrawal": soft_number(raw.get("amountWithdrawal")), "last_month_rate": soft_number(raw.get("lastMonthRate")),
+            "annual_rate": soft_number(raw.get("annualRate")), "code": soft_text(raw.get("code")),
+            "isin": soft_text(raw.get("isin")), "taxes": soft_number(raw.get("taxes")),
             "status": soft_text(raw.get("status"))}
 
 
+def stale_reason(item):
+    """Why an item must not feed a report, or None when its investments are fresh."""
+    if item.get("status") != "UPDATED":
+        return str(item.get("status") or "not UPDATED")
+    detail = item.get("statusDetail")
+    investments = detail.get("investments") if isinstance(detail, dict) else None
+    if isinstance(investments, dict) and investments.get("isUpdated") is False:
+        return "UPDATED but its investments are stale"
+    return None
+
+
 def collect(client_id, client_secret, item_ids=None, request=request_json,
-            with_transactions=False, warnings=None):
+            with_transactions=False, warnings=None, skip_stale=False, skipped=None):
     auth = request("/auth", payload={"clientId": client_id, "clientSecret": client_secret})
     key = auth.get("apiKey")
     if not isinstance(key, str) or not key:
@@ -163,8 +196,13 @@ def collect(client_id, client_secret, item_ids=None, request=request_json,
         if item["id"] in seen_items:
             raise ApiError("Repeated item ID; collection aborted")
         seen_items.add(item["id"])
-        if item.get("status") != "UPDATED":
-            raise ApiError("A connection is not UPDATED; collection aborted to avoid a partial report")
+        reason = stale_reason(item)
+        if reason:
+            if not skip_stale:
+                raise ApiError(f"A connection is {reason}; collection aborted to avoid a partial report")
+            if skipped is not None:
+                skipped.append(item["id"])
+            continue
         connector = item.get("connector") or {}
         if not isinstance(connector, dict):
             raise ApiError("Invalid connector response")
@@ -182,6 +220,8 @@ def collect(client_id, client_secret, item_ids=None, request=request_json,
             result.append(row)
     if not seen_items:
         raise ApiError("No connected items. Connect an account before collecting investments")
+    if skipped and not result:
+        raise ApiError("Every connection is stale; collection aborted to avoid an empty report")
     return investments_list(result)
 
 
@@ -191,15 +231,20 @@ def main():
     parser.add_argument("--item-id", action="append", help="Known item ID; repeat for multiple connections")
     parser.add_argument("--with-transactions", action="store_true",
                         help="Also fetch each investment's transactions (one extra request per investment)")
+    parser.add_argument("--skip-stale", action="store_true",
+                        help="Skip stale connections instead of aborting the whole collection")
     args = parser.parse_args()
     client_id, secret = os.environ.get("PLUGGY_CLIENT_ID"), os.environ.get("PLUGGY_CLIENT_SECRET")
     if not client_id or not secret:
         print("Set PLUGGY_CLIENT_ID and PLUGGY_CLIENT_SECRET in the environment", file=sys.stderr)
         return 1
     try:
-        warnings = []
-        result = collect(client_id, secret, args.item_id, with_transactions=args.with_transactions, warnings=warnings)
+        warnings, skipped = [], []
+        result = collect(client_id, secret, args.item_id, with_transactions=args.with_transactions,
+                         warnings=warnings, skip_stale=args.skip_stale, skipped=skipped)
         private_json(args.output, result)
+        if skipped:
+            print(f"Skipped {len(skipped)} stale connection(s): {', '.join(skipped)}", file=sys.stderr)
         if warnings:
             print(f"Transactions unavailable for {len(warnings)} of {len(result)} investments; "
                   "flows for those will be estimated", file=sys.stderr)

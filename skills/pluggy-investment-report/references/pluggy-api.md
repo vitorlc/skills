@@ -1,8 +1,9 @@
 # Contrato de coleta e relatório
 
 Python 3.10+, somente biblioteca padrão. A execução HTTP usa timeout de 30 segundos,
-sem repetição automática e sem seguir redirecionamentos. Erros não incluem corpos
-HTTP, credenciais ou tokens. A saída só é substituída após coleta completa.
+até três tentativas em `429`/`5xx` (backoff de 1s e 2s) e nunca segue redirecionamentos.
+Erros não incluem corpos HTTP, credenciais ou tokens. A saída só é substituída após
+coleta completa.
 
 ## Endpoints
 
@@ -15,7 +16,12 @@ HTTP, credenciais ou tokens. A saída só é substituída após coleta completa.
 - `GET /investments/{id}/transactions?page=...&pageSize=500` (somente com
   `--with-transactions`): `{results, totalPages}`. Falha ou item malformado marca as
   transações daquele investimento como desconhecidas (`null`) e emite aviso em stderr;
-  não aborta a coleta. Confirmar o contrato na documentação da Pluggy antes de depender dele.
+  não aborta a coleta. `date` (realização) tem prioridade sobre `tradeDate` (liquidação).
+  `amount` nulo usa `netAmount`; `TRANSFER` sem valor vira `0` (portabilidade não é fluxo
+  externo). `movementType` é preservado como `movement`. Confirmar o contrato na
+  documentação da Pluggy antes de depender dele.
+- Item com `status != UPDATED` ou `statusDetail.investments.isUpdated == false` aborta a
+  coleta por padrão; `--skip-stale` ignora essas conexões e as informa em stderr.
 
 Fontes oficiais consultadas na revisão do contrato:
 [items](https://docs.pluggy.ai/reference/items-list-by-cursor),
@@ -42,7 +48,11 @@ Lista de objetos com campos:
 | `issuer`, `issue_date` | Emissor e data de emissão |
 | `quantity`, `as_of`, `status` | Quantidade, data de referência do valor (`date`) e status |
 | `last_twelve_months_rate` | Taxa informada pela Pluggy (fundos); não substitui a taxa calculada |
-| `transactions` | Só com `--with-transactions`: lista `{date, type, amount}` ou `null` (desconhecido) |
+| `issuer_cnpj`, `grace_period_date`, `purchase_date` | CNPJ do emissor, fim da carência e data da compra |
+| `tax_exempt`, `taxes` | Isenção fiscal e impostos provisionados informados pela Pluggy |
+| `amount_withdrawal`, `last_month_rate`, `annual_rate` | Disponível para saque e taxas informadas (mês/ano) |
+| `code`, `isin` | Identidade estável do ativo (CNPJ do fundo / ISIN) |
+| `transactions` | Só com `--with-transactions`: lista `{date, type, amount, movement?}` ou `null` (desconhecido) |
 
 `institution` usa o nome da instituição do próprio investimento quando existe (por
 exemplo B3/CEI); caso contrário, o connector da conexão. Campos informativos novos nunca
@@ -60,9 +70,9 @@ o total correspondente fica `null` (exibido como “não informado”).
 
 ## Arquivos e erros
 
-- `collect_investments.py OUTPUT [--item-id ID ...] [--with-transactions]`: `0` sucesso,
-  `1` configuração, dados ou arquivo, `2` API/rede. stdout informa quantidade e caminho,
-  nunca o token.
+- `collect_investments.py OUTPUT [--item-id ID ...] [--with-transactions] [--skip-stale]`:
+  `0` sucesso, `1` configuração, dados ou arquivo, `2` API/rede. stdout informa quantidade
+  e caminho, nunca o token.
 - `summary.py INPUT [--json]`: Markdown (ou JSON estruturado) em stdout; `0` sucesso,
   `1` arquivo/dados inválidos. Com custo parcial, mostra o rendimento dos ativos com custo
   informado e a cobertura; os totais gerais continuam “não informado”.

@@ -73,7 +73,7 @@ class CollectorFieldTests(unittest.TestCase):
         txs = {'a': [{'tradeDate': '2026-03-01T00:00:00.000Z', 'date': '2026-03-02', 'type': 'BUY', 'amount': 100,
                       'expenses': {'other': 1}, 'description': 'private text'}]}
         rows = collect('id', 'secret', ['item'], api([RAW], txs), with_transactions=True)
-        self.assertEqual(rows[0]['transactions'], [{'date': '2026-03-01T00:00:00.000Z', 'type': 'BUY', 'amount': 100}])
+        self.assertEqual(rows[0]['transactions'], [{'date': '2026-03-02', 'type': 'BUY', 'amount': 100}])
         report_model.investments_list(rows)
 
     def test_no_transactions_is_empty_list_but_failure_is_unknown_and_non_fatal(self):
