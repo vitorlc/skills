@@ -66,7 +66,19 @@ class FlowTests(unittest.TestCase):
                {"date": "garbage", "type": "BUY", "amount": 77}]
         flows, source = performance.asset_flows(inv("a", 1), inv("a", 1, transactions=txs), T0, T1)
         self.assertEqual(source, "transactions")
-        self.assertEqual(sorted(a for _, a in flows), [-30, -20, 100])
+        self.assertEqual(sorted(a for _, a in flows), [-30, -20, -1, 100])
+
+    def test_movement_type_is_the_authoritative_direction(self):
+        txs = [{"date": (T0 + timedelta(days=10)).isoformat(), "type": "BUY", "amount": 100, "movement": "DEBIT"},
+               {"date": (T0 + timedelta(days=20)).isoformat(), "type": "SELL", "amount": 30, "movement": "CREDIT"}]
+        flows, _ = performance.asset_flows(inv("a", 1), inv("a", 1, transactions=txs), T0, T1)
+        self.assertEqual(sorted(a for _, a in flows), [-100, 30])
+
+    def test_tax_reduces_the_investment_and_interest_is_return(self):
+        txs = [{"date": (T0 + timedelta(days=10)).isoformat(), "type": "TAX", "amount": 5},
+               {"date": (T0 + timedelta(days=20)).isoformat(), "type": "INTEREST", "amount": 7}]
+        flows, _ = performance.asset_flows(inv("a", 1), inv("a", 1, transactions=txs), T0, T1)
+        self.assertEqual([a for _, a in flows], [-5])
 
     def test_known_empty_transactions_mean_no_flow(self):
         flows, source = performance.asset_flows(inv("a", 1, 100), inv("a", 1, 500, transactions=[]), T0, T1)

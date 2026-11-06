@@ -38,7 +38,7 @@ BCB_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.{code}/dados"
 CDI_SERIES, IPCA_SERIES = 12, 433
 CACHE_TTL_SECONDS = 12 * 3600
 MIN_ANNUALIZE_DAYS = 30
-INFLOW_TYPES, OUTFLOW_TYPES = {"BUY"}, {"SELL", "AMORTIZATION"}
+INFLOW_TYPES, OUTFLOW_TYPES = {"BUY"}, {"SELL", "AMORTIZATION", "TAX"}
 
 
 class BenchmarkError(RuntimeError):
@@ -69,7 +69,12 @@ def asset_flows(prev: dict, curr: dict, t0: datetime, t1: datetime):
             if moment is None or not t0 < moment <= t1:
                 continue
             amount = abs(tx["amount"])
-            if tx["type"] in INFLOW_TYPES:
+            direction = tx.get("movement")
+            if direction == "CREDIT":
+                flows.append((moment, amount))
+            elif direction == "DEBIT":
+                flows.append((moment, -amount))
+            elif tx["type"] in INFLOW_TYPES:
                 flows.append((moment, amount))
             elif tx["type"] in OUTFLOW_TYPES:
                 flows.append((moment, -amount))
@@ -214,7 +219,7 @@ def analyze(baseline: dict | None, curr_invs: list[dict], now: datetime | None =
         flows, source = asset_flows(prev, curr, t0, t1)
         sources[source] += 1
         records.append({"name": curr.get("name") or "-", "institution": curr.get("institution") or "-",
-                        "category": get_type_label(curr.get("type") or "OTHER"),
+                        "category": get_type_label(curr.get("type") or "OTHER"), "source": source,
                         "v0": prev.get("value") or 0, "v1": curr.get("value") or 0, "flows": flows})
 
     bench = benchmarks_for(t0, t1, bench_fetch) if bench_fetch else None
@@ -232,7 +237,8 @@ def analyze(baseline: dict | None, curr_invs: list[dict], now: datetime | None =
     for r in eligible:
         d = dietz([r], t0, t1)
         if d["rate"] is not None:
-            per_asset.append({"name": r["name"], "institution": r["institution"], "category": r["category"], **d})
+            per_asset.append({"name": r["name"], "institution": r["institution"], "category": r["category"],
+                              "source": r["source"], **d})
     per_asset.sort(key=lambda a: a["rate"], reverse=True)
 
     days = (t1 - t0).total_seconds() / 86400
